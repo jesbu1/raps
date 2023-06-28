@@ -10,7 +10,7 @@ from torch.distributions.independent import Independent
 from torch.distributions.normal import Normal
 from torch.nn import init
 from torch.nn.parameter import Parameter
-from torch.tensor import Tensor
+from torch import Tensor
 
 import rlkit.torch.pytorch_util as ptu
 from rlkit.torch.core import PyTorchModule
@@ -210,7 +210,10 @@ class WorldModel(jit.ScriptModule):
         state: Dict[str, Tensor],
     ):
         for i in range(path_length):
-            (post_params, prior_params,) = self.obs_step(
+            (
+                post_params,
+                prior_params,
+            ) = self.obs_step(
                 state,
                 action[:, i],
                 embed[:, i],
