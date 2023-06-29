@@ -46,8 +46,8 @@ if __name__ == "__main__":
     variant = dict(
         algorithm="DreamerV2",
         version="normal",
-        # replay_buffer_size=int(5e5),
-        replay_buffer_size=int(1e5),
+        replay_buffer_size=int(5e5),
+        #replay_buffer_size=int(1e5),
         algorithm_kwargs=algorithm_kwargs,
         use_raw_actions=False,
         env_suite="metaworld",
