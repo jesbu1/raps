@@ -98,6 +98,7 @@ def experiment(variant):
     num_train_calls = 0
     total_train_expl_time = 0
     for j in range(num_updates):
+        print(f"Running for {num_updates} epochs.")
         epoch_start_time = time.time()
         train_expl_st = time.time()
         if variant["use_linear_lr_decay"]:
@@ -193,6 +194,9 @@ def experiment(variant):
             rlkit_logger.record_tabular(
                 "time/training and exploration (s)", total_train_expl_time
             )
+            rlkit_logger.record_tabular("losses/value", value_loss)
+            rlkit_logger.record_tabular("losses/action", action_loss)
+            rlkit_logger.record_tabular("losses/dist_entropy", dist_entropy)
             rlkit_logger.record_tabular("exploration/num steps total", total_num_steps)
             rlkit_logger.record_tabular("trainer/num train calls", num_train_calls)
             rlkit_logger.record_tabular("Epoch", j // variant["eval_interval"])
@@ -202,5 +206,5 @@ def experiment(variant):
         if j % save_interval == 0 or j == num_updates - 1:
             torch.save(
                 [actor_critic, getattr(utils.get_vec_normalize(envs), "obs_rms", None)],
-                os.path.join(f"{log_dir}_{env_name}.pt"),
+                os.path.join(log_dir, "ckpt.pt"),
             )
