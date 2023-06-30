@@ -8,6 +8,8 @@ from a2c_ppo_acktr.envs import make_vec_envs
 
 
 def evaluate(actor_critic, eval_env_args, eval_env_kwargs, obs_rms, num_episodes, device):
+    saved_obs= []
+    saved_acs= []
     eval_envs = make_vec_envs(
         *eval_env_args, disable_time_limit_mask=True, **eval_env_kwargs
     )
@@ -19,6 +21,7 @@ def evaluate(actor_critic, eval_env_args, eval_env_kwargs, obs_rms, num_episodes
     all_infos = []
     for i in range(num_episodes):
         obs = eval_envs.reset()
+        saved_obs.append(obs)
         eval_recurrent_hidden_states = torch.zeros(
             1, actor_critic.recurrent_hidden_state_size, device=device
         )
@@ -33,7 +36,8 @@ def evaluate(actor_critic, eval_env_args, eval_env_kwargs, obs_rms, num_episodes
 
             # Obser reward and next obs
             obs, reward, done, infos = eval_envs.step(action)
-
+            saved_acs.append(action)
+            saved_obs.append(obs)
             eval_masks = torch.tensor(
                 [[0.0] if done_ else [1.0] for done_ in done],
                 dtype=torch.float32,
@@ -55,3 +59,4 @@ def evaluate(actor_critic, eval_env_args, eval_env_kwargs, obs_rms, num_episodes
             num_episodes, mean_ep_reward
         )
     )
+    return saved_obs, saved_acs

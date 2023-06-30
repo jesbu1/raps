@@ -208,3 +208,107 @@ def experiment(variant):
                 [actor_critic, getattr(utils.get_vec_normalize(envs), "obs_rms", None)],
                 os.path.join(log_dir, "ckpt.pt"),
             )
+
+def eval_experiment(variant):
+    env_name = variant["env_name"]
+    env_suite = variant["env_suite"]
+    env_kwargs = variant["env_kwargs"]
+    multi_step_horizon = variant.get("multi_step_horizon", 1)
+    seed = variant["seed"]
+
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+
+    log_dir = os.path.expanduser(rlkit_logger.get_snapshot_dir())
+    utils.cleanup_log_dir(log_dir)
+
+    device = torch.device("cuda:0")
+
+    envs = make_vec_envs(
+        env_suite,
+        env_name,
+        env_kwargs,
+        seed,
+        variant["num_processes"],
+        variant["rollout_kwargs"]["gamma"],
+        rlkit_logger.get_snapshot_dir(),
+        device,
+        False,
+    )
+
+    eval_env_args = (
+        env_suite,
+        env_name,
+        env_kwargs,
+        seed,
+        1,
+        variant["rollout_kwargs"]["gamma"],
+        rlkit_logger.get_snapshot_dir(),
+        device,
+        False,
+    )
+
+    eval_env_kwargs = dict()
+
+    # load the state_dict of the model
+    model_path = os.path.join(log_dir, "ckpt.pt")
+    actor_critic, obs_rms = torch.load(model_path, map_location=device)
+
+    #actor_critic = Policy(
+    #    envs.observation_space.shape,
+    #    envs.action_space,
+    #    base_kwargs=variant["actor_kwargs"],
+    #    discrete_continuous_dist=variant.get("discrete_continuous_dist", False),
+    #    env=envs,
+    #    multi_step_horizon=multi_step_horizon,
+    #)
+    actor_critic.to(device)
+
+    agent = algo.PPO(actor_critic, **variant["algorithm_kwargs"])
+    torch.backends.cudnn.benchmark = True
+    rollouts = RolloutStorage(
+        variant["num_steps"],
+        variant["num_processes"],
+        envs.observation_space.shape,
+        envs.action_space,
+        actor_critic.recurrent_hidden_state_size,
+    )
+
+    obs = envs.reset()
+    policy_step_obs = obs
+    rollouts.obs[0].copy_(obs)
+    rollouts.to(device)
+
+    start = time.time()
+    obs_rms = utils.get_vec_normalize(envs).obs_rms
+    saved_obs, saved_acs = evaluate(
+        actor_critic,
+        eval_env_args,
+        eval_env_kwargs,
+        obs_rms,
+        5,
+        device,
+    )
+    primitive_idx_to_name = envs.envs[0].primitive_idx_to_name
+    primitive_name_to_action_idx = envs.envs[0].primitive_name_to_action_idx
+    rlkit_logger.record_tabular(
+        "time/epoch (s)", time.time() - epoch_start_time
+    )
+    rlkit_logger.record_tabular("time/total (s)", time.time() - start)
+    rlkit_logger.record_tabular(
+        "time/training and exploration (s)", total_train_expl_time
+    )
+    rlkit_logger.record_tabular("losses/value", value_loss)
+    rlkit_logger.record_tabular("losses/action", action_loss)
+    rlkit_logger.record_tabular("losses/dist_entropy", dist_entropy)
+    rlkit_logger.record_tabular("exploration/num steps total", total_num_steps)
+    rlkit_logger.record_tabular("trainer/num train calls", num_train_calls)
+    rlkit_logger.record_tabular("Epoch", j // variant["eval_interval"])
+    rlkit_logger.dump_tabular(with_prefix=False, with_timestamp=False)
+    # save the replay buffer 
+    save_interval = 5
+    if j % save_interval == 0 or j == num_updates - 1:
+        torch.save(
+            [actor_critic, getattr(utils.get_vec_normalize(envs), "obs_rms", None)],
+            os.path.join(log_dir, "ckpt.pt"),
+        )
