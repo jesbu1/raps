@@ -18,7 +18,7 @@ def experiment(variant):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--exp_prefix", type=str, default="test")
+    parser.add_argument("--exp_prefix", type=str, default="ppo_eval")
     parser.add_argument("--num_seeds", type=int, default=1)
     parser.add_argument("--mode", type=str, default="local")
     parser.add_argument('--load_dir', type=str, default=None, required=True)
@@ -30,16 +30,16 @@ if __name__ == "__main__":
     else:
         exp_prefix = args.exp_prefix
     variant = dict(
-        algorithm_kwargs=dict(
-            entropy_coef=0.01,
-            value_loss_coef=0.5,
-            lr=3e-4,
-            num_mini_batch=64,
-            ppo_epoch=10,
-            clip_param=0.2,
-            eps=1e-5,
-            max_grad_norm=0.5,
-        ),
+        #algorithm_kwargs=dict(
+        #    entropy_coef=0.01,
+        #    value_loss_coef=0.5,
+        #    lr=3e-4,
+        #    num_mini_batch=64,
+        #    ppo_epoch=10,
+        #    clip_param=0.2,
+        #    eps=1e-5,
+        #    max_grad_norm=0.5,
+        #),
         rollout_kwargs=dict(
             use_gae=True,
             gae_lambda=0.95,
@@ -62,15 +62,16 @@ if __name__ == "__main__":
             ),
             image_kwargs=dict(),
         ),
-        actor_kwargs=dict(recurrent=False, hidden_size=512, hidden_activation="relu"),
-        num_processes=12,
-        num_env_steps=int(5e5),
-        num_steps=2048 // 12,
+        #actor_kwargs=dict(recurrent=False, hidden_size=512, hidden_activation="relu"),
+        num_processes=1,
+        #num_env_steps=int(5e5),
+        #num_steps=2048 // 12,
         log_interval=1,
         eval_interval=1,
         use_raw_actions=False,
         env_suite="kitchen",
         use_linear_lr_decay=False,
+        load_dir=args.load_dir,
     )
 
     #search_space = {"rollout_kwargs.gamma": [0.99, 0.95], "env_name": [args.env]}

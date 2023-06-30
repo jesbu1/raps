@@ -8,8 +8,8 @@ from a2c_ppo_acktr.envs import make_vec_envs
 
 
 def evaluate(actor_critic, eval_env_args, eval_env_kwargs, obs_rms, num_episodes, device):
-    saved_obs= []
-    saved_acs= []
+    saved_obss= []
+    saved_acss= []
     eval_envs = make_vec_envs(
         *eval_env_args, disable_time_limit_mask=True, **eval_env_kwargs
     )
@@ -20,6 +20,8 @@ def evaluate(actor_critic, eval_env_args, eval_env_kwargs, obs_rms, num_episodes
     rewards = 0
     all_infos = []
     for i in range(num_episodes):
+        saved_obs = []
+        saved_acs = []
         obs = eval_envs.reset()
         saved_obs.append(obs)
         eval_recurrent_hidden_states = torch.zeros(
@@ -50,6 +52,8 @@ def evaluate(actor_critic, eval_env_args, eval_env_kwargs, obs_rms, num_episodes
 
             rewards += reward
         all_infos.append(ep_infos)
+        saved_obss.append(torch.cat(saved_obs).cpu())
+        saved_acss.append(torch.cat(saved_acs).cpu())
     mean_ep_reward = rewards.sum().item() / num_episodes
     rlkit_logger.record_dict({"Average Returns": mean_ep_reward}, prefix="evaluation/")
     statistics = compute_path_info(all_infos)
@@ -59,4 +63,4 @@ def evaluate(actor_critic, eval_env_args, eval_env_kwargs, obs_rms, num_episodes
             num_episodes, mean_ep_reward
         )
     )
-    return saved_obs, saved_acs
+    return saved_obss, saved_acss

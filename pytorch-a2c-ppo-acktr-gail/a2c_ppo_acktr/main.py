@@ -1,4 +1,5 @@
 import copy
+import pickle
 import glob
 import os
 import time
@@ -213,14 +214,13 @@ def eval_experiment(variant):
     env_name = variant["env_name"]
     env_suite = variant["env_suite"]
     env_kwargs = variant["env_kwargs"]
-    multi_step_horizon = variant.get("multi_step_horizon", 1)
+    #multi_step_horizon = variant.get("multi_step_horizon", 1)
     seed = variant["seed"]
 
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
 
-    log_dir = os.path.expanduser(rlkit_logger.get_snapshot_dir())
-    utils.cleanup_log_dir(log_dir)
+    log_dir = os.path.expanduser(variant["load_dir"])
 
     device = torch.device("cuda:0")
 
@@ -262,22 +262,14 @@ def eval_experiment(variant):
     #    env=envs,
     #    multi_step_horizon=multi_step_horizon,
     #)
+    import pdb; pdb.set_trace()
     actor_critic.to(device)
 
-    agent = algo.PPO(actor_critic, **variant["algorithm_kwargs"])
+    #agent = algo.PPO(actor_critic, **variant["algorithm_kwargs"])
     torch.backends.cudnn.benchmark = True
-    rollouts = RolloutStorage(
-        variant["num_steps"],
-        variant["num_processes"],
-        envs.observation_space.shape,
-        envs.action_space,
-        actor_critic.recurrent_hidden_state_size,
-    )
 
     obs = envs.reset()
     policy_step_obs = obs
-    rollouts.obs[0].copy_(obs)
-    rollouts.to(device)
 
     start = time.time()
     obs_rms = utils.get_vec_normalize(envs).obs_rms
@@ -291,24 +283,20 @@ def eval_experiment(variant):
     )
     primitive_idx_to_name = envs.envs[0].primitive_idx_to_name
     primitive_name_to_action_idx = envs.envs[0].primitive_name_to_action_idx
-    rlkit_logger.record_tabular(
-        "time/epoch (s)", time.time() - epoch_start_time
-    )
-    rlkit_logger.record_tabular("time/total (s)", time.time() - start)
-    rlkit_logger.record_tabular(
-        "time/training and exploration (s)", total_train_expl_time
-    )
-    rlkit_logger.record_tabular("losses/value", value_loss)
-    rlkit_logger.record_tabular("losses/action", action_loss)
-    rlkit_logger.record_tabular("losses/dist_entropy", dist_entropy)
-    rlkit_logger.record_tabular("exploration/num steps total", total_num_steps)
-    rlkit_logger.record_tabular("trainer/num train calls", num_train_calls)
-    rlkit_logger.record_tabular("Epoch", j // variant["eval_interval"])
-    rlkit_logger.dump_tabular(with_prefix=False, with_timestamp=False)
-    # save the replay buffer 
-    save_interval = 5
-    if j % save_interval == 0 or j == num_updates - 1:
-        torch.save(
-            [actor_critic, getattr(utils.get_vec_normalize(envs), "obs_rms", None)],
-            os.path.join(log_dir, "ckpt.pt"),
-        )
+    # save the observations, acs, pirmitive_idx_to_name, and primitive_name_to_action_idx with pickle
+    saved_data = {
+        "obs": saved_obs,
+        "acs": saved_acs,
+        "primitive_idx_to_name": primitive_idx_to_name,
+        "primitive_name_to_action_idx": primitive_name_to_action_idx,
+    }
+    saved_data_path = os.path.join(log_dir, "saved_data.pkl")
+    with open(saved_data_path, "wb") as f:
+        pickle.dump(saved_data, f)
+
+
+    #if j % save_interval == 0 or j == num_updates - 1:
+    #    torch.save(
+    #        [actor_critic, getattr(utils.get_vec_normalize(envs), "obs_rms", None)],
+    #        os.path.join(log_dir, "ckpt.pt"),
+    #    )
