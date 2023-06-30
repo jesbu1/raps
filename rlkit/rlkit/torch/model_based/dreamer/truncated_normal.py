@@ -3,8 +3,8 @@ import math
 from numbers import Number
 
 import torch
-from torch.distributions import Distribution, constraints
-from torch.distributions.utils import broadcast_all
+from rlkit.torch.torch_17_distributions import Distribution, constraints
+from rlkit.torch.torch_17_distributions.utils import broadcast_all
 
 import rlkit.torch.pytorch_util as ptu
 
@@ -87,7 +87,7 @@ class TruncatedStandardNormal(Distribution):
 
     @staticmethod
     def _little_phi(x):
-        return (-(x ** 2) * 0.5).exp() * CONST_INV_SQRT_2PI
+        return (-(x**2) * 0.5).exp() * CONST_INV_SQRT_2PI
 
     @staticmethod
     def _big_phi(x):
@@ -108,7 +108,7 @@ class TruncatedStandardNormal(Distribution):
     def log_prob(self, value):
         if self._validate_args:
             self._validate_sample(value)
-        return CONST_LOG_INV_SQRT_2PI - self._log_Z - (value ** 2) * 0.5
+        return CONST_LOG_INV_SQRT_2PI - self._log_Z - (value**2) * 0.5
 
     def rsample(self, sample_shape=torch.Size()):
         shape = self._extended_shape(sample_shape)
@@ -144,7 +144,7 @@ class TruncatedNormal(TruncatedStandardNormal):
         super(TruncatedNormal, self).__init__(a, b, validate_args=validate_args)
         self._log_scale = self.scale.log()
         self._mean = self._mean * self.scale + self.loc
-        self._variance = self._variance * self.scale ** 2
+        self._variance = self._variance * self.scale**2
         self._entropy += self._log_scale
 
     def _to_std_rv(self, value):

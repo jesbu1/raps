@@ -7,7 +7,7 @@ from rlkit.pythonplusplus import identity
 from rlkit.torch.model_based.dreamer.mlp import Mlp
 
 
-class CNN(jit.ScriptModule):
+class CNN(nn.Module):
     def __init__(
         self,
         input_width,
@@ -58,7 +58,7 @@ class CNN(jit.ScriptModule):
             input_channels = out_channels
         self.to(memory_format=torch.channels_last)
 
-    @jit.script_method
+    
     def forward(self, input):
         conv_input = input.narrow(
             start=0, length=self.conv_input_length, dim=1
@@ -77,7 +77,7 @@ class CNN(jit.ScriptModule):
         return output
 
 
-class DCNN(jit.ScriptModule):
+class DCNN(nn.Module):
     def __init__(
         self,
         fc_input_size,
@@ -148,7 +148,7 @@ class DCNN(jit.ScriptModule):
         self.deconv_output.bias.data.fill_(0)
         self.to(memory_format=torch.channels_last)
 
-    @jit.script_method
+    
     def forward(self, input):
         h = self.hidden_activation(self.last_fc(input))
         h = h.view(

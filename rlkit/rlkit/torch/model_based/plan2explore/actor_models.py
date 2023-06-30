@@ -1,6 +1,10 @@
 import torch
 import torch.nn.functional as F
-from torch.distributions import Independent, Normal, TransformedDistribution
+from rlkit.torch.torch_17_distributions import (
+    Independent,
+    Normal,
+    TransformedDistribution,
+)
 
 import rlkit.torch.pytorch_util as ptu
 from rlkit.torch.model_based.dreamer.actor_models import (

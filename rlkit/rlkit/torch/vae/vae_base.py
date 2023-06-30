@@ -2,7 +2,7 @@ import abc
 
 import numpy as np
 import torch
-from torch.distributions import Normal
+from rlkit.torch.torch_17_distributions import Normal
 from torch.nn import functional as F
 
 from rlkit.torch import pytorch_util as ptu

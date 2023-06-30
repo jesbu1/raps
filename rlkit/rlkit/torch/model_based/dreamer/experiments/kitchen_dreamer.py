@@ -1,3 +1,4 @@
+from torch import compile
 def experiment(variant):
     import os
 
@@ -116,6 +117,11 @@ def experiment(variant):
             input_size=world_model.feature_size,
             hidden_activation=torch.nn.functional.elu,
         )
+    
+    #world_model = compile(world_model)
+    actor = compile(actor)
+    vf = compile(vf)
+    target_vf = compile(target_vf)
 
     expl_policy = DreamerPolicy(
         world_model,
@@ -139,7 +145,7 @@ def experiment(variant):
         continuous_action_dim=continuous_action_dim,
         discrete_continuous_dist=discrete_continuous_dist,
     )
-
+    
     rand_policy = ActionSpaceSamplePolicy(expl_env)
 
     expl_path_collector = VecMdpPathCollector(

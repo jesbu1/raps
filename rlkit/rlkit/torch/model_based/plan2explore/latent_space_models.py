@@ -6,7 +6,7 @@ import rlkit.torch.pytorch_util as ptu
 from rlkit.torch.model_based.dreamer.mlp import Mlp
 
 
-class OneStepEnsembleModel(jit.ScriptModule):
+class OneStepEnsembleModel(nn.Module):
     def __init__(
         self,
         action_dim,

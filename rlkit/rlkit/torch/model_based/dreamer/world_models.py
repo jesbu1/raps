@@ -5,9 +5,9 @@ from typing import Dict, List
 import torch
 import torch.nn.functional as F
 from torch import jit, nn
-from torch.distributions.bernoulli import Bernoulli
-from torch.distributions.independent import Independent
-from torch.distributions.normal import Normal
+from rlkit.torch.torch_17_distributions.bernoulli import Bernoulli
+from rlkit.torch.torch_17_distributions.independent import Independent
+from rlkit.torch.torch_17_distributions.normal import Normal
 from torch.nn import init
 from torch.nn.parameter import Parameter
 from torch import Tensor
@@ -19,7 +19,7 @@ from rlkit.torch.model_based.dreamer.conv_networks import CNN, DCNN
 from rlkit.torch.model_based.dreamer.mlp import Mlp
 
 
-class WorldModel(jit.ScriptModule):
+class WorldModel(nn.Module):
     def __init__(
         self,
         action_dim,
@@ -132,7 +132,7 @@ class WorldModel(jit.ScriptModule):
         )
         self.std_act = std_act
 
-    @jit.script_method
+    
     def compute_std(self, std):
         if self.std_act == "softplus":
             std = F.softplus(std)
@@ -140,7 +140,7 @@ class WorldModel(jit.ScriptModule):
             std = 2 * torch.sigmoid(std / 2)
         return std + 0.1
 
-    @jit.script_method
+    
     def obs_step(
         self, prev_state: Dict[str, Tensor], prev_action: Tensor, embed: Tensor
     ):
@@ -169,7 +169,7 @@ class WorldModel(jit.ScriptModule):
         stoch = self.get_dist(logits, logits, latent=True).rsample()
         return stoch
 
-    @jit.script_method
+    
     def action_step(self, prev_state: Dict[str, Tensor], prev_action: Tensor):
         prev_stoch = prev_state["stoch"]
         if self.discrete_latents:
@@ -199,7 +199,7 @@ class WorldModel(jit.ScriptModule):
             prior = {"mean": mean, "std": std, "stoch": stoch, "deter": deter_new}
         return prior
 
-    @jit.script_method
+    
     def forward_batch(
         self,
         path_length: int,
@@ -307,15 +307,15 @@ class WorldModel(jit.ScriptModule):
             std = params["std"]
         return self.get_dist(mean.detach(), std.detach(), dims, normal, latent)
 
-    @jit.script_method
+    
     def encode(self, obs):
         return self.conv_encoder(self.preprocess(obs))
 
-    @jit.script_method
+    
     def decode(self, feat):
         return self.conv_decoder(feat)
 
-    @jit.script_method
+    
     def preprocess(self, obs):
         obs = obs / 255.0 - 0.5
         return obs
@@ -341,7 +341,7 @@ class WorldModel(jit.ScriptModule):
         return state
 
 
-class LayerNorm(jit.ScriptModule):
+class LayerNorm(nn.Module):
     def __init__(self, normalized_shape):
         super(LayerNorm, self).__init__()
         if isinstance(normalized_shape, numbers.Integral):
@@ -352,19 +352,19 @@ class LayerNorm(jit.ScriptModule):
         self.bias = Parameter(torch.zeros(normalized_shape))
         self.normalized_shape = normalized_shape
 
-    @jit.script_method
+    
     def compute_layernorm_stats(self, input):
         mu = input.mean(-1, keepdim=True)
         sigma = input.std(-1, keepdim=True, unbiased=False)
         return mu, sigma
 
-    @jit.script_method
+    
     def forward(self, input):
         mu, sigma = self.compute_layernorm_stats(input)
         return (input - mu) / sigma * self.weight + self.bias
 
 
-class LayerNormGRUCell(jit.ScriptModule):
+class LayerNormGRUCell(nn.Module):
     def __init__(self, input_size, output_size):
         super(LayerNormGRUCell, self).__init__()
         hidden_size = output_size
@@ -389,7 +389,7 @@ class LayerNormGRUCell(jit.ScriptModule):
         self._layer = nn.Linear(input_size * 2, 3 * output_size, bias=True)
         self._norm = nn.LayerNorm((output_size * 3))
 
-    @jit.script_method
+    
     def forward(self, inputs, hx):
         parts = self._layer(torch.cat([inputs, hx], -1))
         parts = self._norm(parts)

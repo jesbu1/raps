@@ -6,7 +6,7 @@ from rlkit.pythonplusplus import identity
 from rlkit.torch.core import PyTorchModule
 
 
-class Mlp(jit.ScriptModule):
+class Mlp(nn.Module):
     def __init__(
         self,
         hidden_sizes,
@@ -39,7 +39,7 @@ class Mlp(jit.ScriptModule):
         torch.nn.init.xavier_uniform_(self.last_fc.weight)
         self.last_fc.bias.data.fill_(0)
 
-    @jit.script_method
+    
     def forward(self, input):
         h = input
         for i, fc in enumerate(self.fcs):

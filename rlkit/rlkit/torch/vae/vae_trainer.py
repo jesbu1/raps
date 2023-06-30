@@ -5,7 +5,7 @@ import numpy as np
 import torch
 from multiworld.core.image_env import normalize_image
 from torch import optim
-from torch.distributions import Normal
+from rlkit.torch.torch_17_distributions import Normal
 from torch.utils.data import DataLoader
 from torchvision.utils import save_image
 

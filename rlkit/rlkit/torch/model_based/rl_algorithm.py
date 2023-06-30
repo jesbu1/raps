@@ -58,9 +58,6 @@ class BaseRLAlgorithm(object, metaclass=abc.ABCMeta):
         raise NotImplementedError("_train must implemented by inherited class")
 
     def _end_epoch(self, epoch):
-        import pdb
-
-        pdb.set_trace()
         snapshot = self._get_snapshot()
         logger.save_itr_params(epoch, snapshot)
         gt.stamp("saving")
@@ -78,12 +75,12 @@ class BaseRLAlgorithm(object, metaclass=abc.ABCMeta):
         snapshot = {}
         for k, v in self.trainer.get_snapshot().items():
             snapshot["trainer/" + k] = v
-        for k, v in self.expl_data_collector.get_snapshot().items():
-            snapshot["exploration/" + k] = v
-        for k, v in self.eval_data_collector.get_snapshot().items():
-            snapshot["evaluation/" + k] = v
-        for k, v in self.replay_buffer.get_snapshot().items():
-            snapshot["replay_buffer/" + k] = v
+        #for k, v in self.expl_data_collector.get_snapshot().items():
+        #    snapshot["exploration/" + k] = v
+        #for k, v in self.eval_data_collector.get_snapshot().items():
+        #    snapshot["evaluation/" + k] = v
+        #for k, v in self.replay_buffer.get_snapshot().items():
+        #    snapshot["replay_buffer/" + k] = v
         return snapshot
 
     def _log_wandb(self, d, prefix, epoch):

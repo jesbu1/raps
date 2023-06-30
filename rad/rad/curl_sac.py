@@ -5,7 +5,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.distributions.one_hot_categorical import OneHotCategorical
+from rlkit.torch.torch_17_distributions.one_hot_categorical import OneHotCategorical
 
 import rad.data_augs as da
 import rad.utils as utils
@@ -544,7 +544,6 @@ class RadSacAgent(object):
         self.log_alpha_optimizer.step()
 
     def update_cpc(self, obs_anchor, obs_pos, cpc_kwargs, L, step):
-
         # time flips
         """
         time_pos = cpc_kwargs["time_pos"]

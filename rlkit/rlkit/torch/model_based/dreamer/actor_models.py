@@ -1,8 +1,16 @@
 import torch
+import weakref
 import torch.nn.functional as F
 from torch import jit
-from torch.distributions import Normal, Transform, TransformedDistribution
-from torch.distributions.one_hot_categorical import OneHotCategorical
+from rlkit.torch.torch_17_distributions import (
+    Normal,
+    Transform,
+    Distribution,
+    constraints,
+    TransformedDistribution,
+)
+from rlkit.torch.torch_17_distributions.utils import _sum_rightmost
+from rlkit.torch.torch_17_distributions.one_hot_categorical import OneHotCategorical
 
 import rlkit.torch.pytorch_util as ptu
 from rlkit.torch.model_based.dreamer.mlp import Mlp
@@ -49,7 +57,7 @@ class ActorModel(Mlp):
         self.use_tanh_normal = use_tanh_normal
         self._dist = dist
 
-    @jit.script_method
+    
     def forward_net(self, input):
         h = input
         for i, fc in enumerate(self.fcs):
@@ -147,7 +155,7 @@ class ActorModel(Mlp):
                 dist = Independent(dist, 1)
         return dist
 
-    @jit.script_method
+    
     def compute_exploration_action(self, action, expl_amount: float):
         if self.discrete_continuous_dist:
             discrete, continuous = (

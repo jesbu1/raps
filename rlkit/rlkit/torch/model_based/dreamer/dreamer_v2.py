@@ -4,7 +4,7 @@ from typing import Tuple
 import numpy as np
 import torch
 import torch.optim as optim
-from torch.distributions import kl_divergence as kld
+from rlkit.torch.torch_17_distributions import kl_divergence as kld
 
 import rlkit.torch.pytorch_util as ptu
 from rlkit.core.loss import LossFunction, LossStatistics
@@ -603,10 +603,10 @@ class DreamerV2Trainer(TorchTrainer, LossFunction):
 
     def get_snapshot(self):
         return dict(
-            actor=self.actor,
-            world_model=self.world_model,
-            vf=self.vf,
-            target_vf=self.target_vf,
+            actor=self.actor.state_dict(),
+            world_model=self.world_model.state_dict(),
+            vf=self.vf.state_dict(),
+            target_vf=self.target_vf.state_dict(),
         )
 
     def pretrain_actor_vf(self, num_imagination_iterations):
