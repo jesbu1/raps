@@ -1,4 +1,5 @@
 import argparse
+import pickle
 import os
 import random
 import subprocess
@@ -22,13 +23,10 @@ if __name__ == "__main__":
     parser.add_argument("--num_seeds", type=int, default=1)
     parser.add_argument("--mode", type=str, default="local")
     parser.add_argument('--load_dir', type=str, default=None, required=True)
-    parser.add_argument("--env", type=str, default="")
-    parser.add_argument("--debug", action="store_true", default=False)
+    parser.add_argument("--checkpoint_path", type=str, default=None, required=True)
     args = parser.parse_args()
-    if args.debug:
-        exp_prefix = "test" + args.exp_prefix
-    else:
-        exp_prefix = args.exp_prefix
+    exp_prefix = args.exp_prefix
+    """
     variant = dict(
         #algorithm_kwargs=dict(
         #    entropy_coef=0.01,
@@ -73,8 +71,15 @@ if __name__ == "__main__":
         use_linear_lr_decay=False,
         load_dir=args.load_dir,
     )
-    # TODO: load the variant from the checkpoint directory
+    """
     # fix issue with there being checkpoints ina different spot
+    saved_experiment_path = os.path.join(args.load_dir, "experiment.pkl")
+    with open(saved_experiment_path, "rb") as f:
+        saved_experiment = pickle.load(f)['run_experiment_here_kwargs']
+    # modify the variant a little
+    saved_experiment["variant"]["checkpoint_path"] = args.checkpoint_path
+    saved_experiment["variant"]["log_dir"] = args.load_dir
+    saved_experiment["variant"]["num_processes"] = 1
     
 
     #search_space = {"rollout_kwargs.gamma": [0.99, 0.95], "env_name": [args.env]}
@@ -85,13 +90,14 @@ if __name__ == "__main__":
     #for exp_id, variant in enumerate(sweeper.iterate_hyperparameters()):
     for _ in range(args.num_seeds):
         seed = random.randint(0, 100000)
-        variant["seed"] = seed
+        #variant["seed"] = seed
         #variant["exp_id"] = exp_id
         run_experiment(
             experiment,
             exp_prefix=args.exp_prefix,
             mode=args.mode,
-            variant=variant,
+            #variant=variant,
+            variant=saved_experiment["variant"],
             use_gpu=True,
             snapshot_mode="last",
             python_cmd=subprocess.check_output("which python", shell=True).decode(

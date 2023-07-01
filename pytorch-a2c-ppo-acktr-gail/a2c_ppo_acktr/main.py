@@ -216,11 +216,12 @@ def eval_experiment(variant):
     env_kwargs = variant["env_kwargs"]
     #multi_step_horizon = variant.get("multi_step_horizon", 1)
     seed = variant["seed"]
+    log_dir = variant["log_dir"]
 
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
 
-    log_dir = os.path.expanduser(variant["load_dir"])
+    checkpoint_path = os.path.expanduser(variant["checkpoint_path"])
 
     device = torch.device("cuda:0")
 
@@ -251,8 +252,7 @@ def eval_experiment(variant):
     eval_env_kwargs = dict()
 
     # load the state_dict of the model
-    model_path = os.path.join(log_dir, "ckpt.pt")
-    actor_critic, obs_rms = torch.load(model_path, map_location=device)
+    actor_critic, obs_rms = torch.load(checkpoint_path, map_location=device)
 
     #actor_critic = Policy(
     #    envs.observation_space.shape,
@@ -262,7 +262,6 @@ def eval_experiment(variant):
     #    env=envs,
     #    multi_step_horizon=multi_step_horizon,
     #)
-    import pdb; pdb.set_trace()
     actor_critic.to(device)
 
     #agent = algo.PPO(actor_critic, **variant["algorithm_kwargs"])
@@ -293,6 +292,7 @@ def eval_experiment(variant):
     saved_data_path = os.path.join(log_dir, "saved_data.pkl")
     with open(saved_data_path, "wb") as f:
         pickle.dump(saved_data, f)
+    print(f"Saved data to {saved_data_path}.")
 
 
     #if j % save_interval == 0 or j == num_updates - 1:
