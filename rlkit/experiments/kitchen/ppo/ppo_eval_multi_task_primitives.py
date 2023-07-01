@@ -73,6 +73,9 @@ if __name__ == "__main__":
         use_linear_lr_decay=False,
         load_dir=args.load_dir,
     )
+    # TODO: load the variant from the checkpoint directory
+    # fix issue with there being checkpoints ina different spot
+    
 
     #search_space = {"rollout_kwargs.gamma": [0.99, 0.95], "env_name": [args.env]}
     #sweeper = hyp.DeterministicHyperparameterSweeper(
