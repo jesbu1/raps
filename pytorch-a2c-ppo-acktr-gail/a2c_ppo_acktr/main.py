@@ -71,6 +71,7 @@ def experiment(variant):
         env=envs,
         multi_step_horizon=multi_step_horizon,
     )
+    actor_critic = torch.compile(actor_critic)
     actor_critic.to(device)
 
     agent = algo.PPO(actor_critic, **variant["algorithm_kwargs"])
@@ -206,7 +207,7 @@ def experiment(variant):
         save_interval = 5
         if j % save_interval == 0 or j == num_updates - 1:
             torch.save(
-                [actor_critic, getattr(utils.get_vec_normalize(envs), "obs_rms", None)],
+                [actor_critic.state_dict(), getattr(utils.get_vec_normalize(envs), "obs_rms", None)],
                 os.path.join(log_dir, "ckpt.pt"),
             )
 
