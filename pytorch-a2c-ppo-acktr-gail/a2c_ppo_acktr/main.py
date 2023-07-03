@@ -215,17 +215,16 @@ def eval_experiment(variant):
     env_name = variant["env_name"]
     env_suite = variant["env_suite"]
     env_kwargs = variant["env_kwargs"]
-    #multi_step_horizon = variant.get("multi_step_horizon", 1)
+    multi_step_horizon = variant.get("multi_step_horizon", 1)
     seed = variant["seed"]
     log_dir = variant["log_dir"]
 
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
 
-    checkpoint_path = os.path.expanduser(variant["checkpoint_path"])
+    checkpoint_path = variant["checkpoint_path"]
 
     device = torch.device("cuda:0")
-
     envs = make_vec_envs(
         env_suite,
         env_name,
@@ -253,26 +252,35 @@ def eval_experiment(variant):
     eval_env_kwargs = dict()
 
     # load the state_dict of the model
+    # check if it's a state_dict or an nn.module
     actor_critic, obs_rms = torch.load(checkpoint_path, map_location=device)
-
-    #actor_critic = Policy(
-    #    envs.observation_space.shape,
-    #    envs.action_space,
-    #    base_kwargs=variant["actor_kwargs"],
-    #    discrete_continuous_dist=variant.get("discrete_continuous_dist", False),
-    #    env=envs,
-    #    multi_step_horizon=multi_step_horizon,
-    #)
-    actor_critic.to(device)
+    #if isinstance(actor_critic, nn.Module):
+    #    actor_critic.to(device)
+    if isinstance(actor_critic, dict):
+        temp_actor_critic = Policy(
+            envs.observation_space.shape,
+            envs.action_space,
+            base_kwargs=variant["actor_kwargs"],
+            discrete_continuous_dist=variant.get("discrete_continuous_dist", False),
+            env=envs,
+            multi_step_horizon=multi_step_horizon,
+        )
+        # remove "_orig_mod" from front of each weight dict with str function
+        state_dict = {}
+        for k in list(actor_critic.keys()):
+            state_dict[k.split("_orig_mod.")[1]] = actor_critic[k]
+        temp_actor_critic.load_state_dict(state_dict)
+        temp_actor_critic.to(device)
+        actor_critic = temp_actor_critic
 
     #agent = algo.PPO(actor_critic, **variant["algorithm_kwargs"])
-    torch.backends.cudnn.benchmark = True
 
     obs = envs.reset()
     policy_step_obs = obs
 
     start = time.time()
     obs_rms = utils.get_vec_normalize(envs).obs_rms
+    # TODO: saved actions are not accurate, we want the actions from teh perspective of the policy and not from the perspective of the environment
     saved_obs, saved_acs = evaluate(
         actor_critic,
         eval_env_args,
