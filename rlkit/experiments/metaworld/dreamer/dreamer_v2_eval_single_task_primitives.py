@@ -35,6 +35,8 @@ if __name__ == "__main__":
         seed = random.randint(0, 100000)
         variant["seed"] = seed
         #variant["exp_id"] = 0
+
+        # TODO: eval_experiment code
         eval_experiment(
             experiment,
             exp_prefix=args.exp_prefix,
