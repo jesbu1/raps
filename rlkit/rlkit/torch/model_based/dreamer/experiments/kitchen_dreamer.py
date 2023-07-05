@@ -1,35 +1,36 @@
+import torch
+import pickle
 from torch import compile
+import os
+
+import rlkit.envs.primitives_make_env as primitives_make_env
+import rlkit.torch.pytorch_util as ptu
+from rlkit.envs.mujoco_vec_wrappers import DummyVecEnv, StableBaselinesVecEnv
+from rlkit.torch.model_based.dreamer.actor_models import (
+    ActorModel,
+    ConditionalActorModel,
+)
+from rlkit.torch.model_based.dreamer.dreamer import DreamerTrainer
+from rlkit.torch.model_based.dreamer.dreamer_policy import (
+    ActionSpaceSamplePolicy,
+    DreamerPolicy,
+)
+from rlkit.torch.model_based.dreamer.dreamer_v2 import DreamerV2Trainer
+from rlkit.torch.model_based.dreamer.episode_replay_buffer import (
+    EpisodeReplayBuffer,
+)
+from rlkit.torch.model_based.dreamer.kitchen_video_func import video_post_epoch_func
+from rlkit.torch.model_based.dreamer.mlp import Mlp
+from rlkit.torch.model_based.dreamer.path_collector import VecMdpPathCollector
+from rlkit.torch.model_based.dreamer.world_models import WorldModel
+from rlkit.torch.model_based.plan2explore.actor_models import (
+    ConditionalContinuousActorModel,
+)
+from rlkit.torch.model_based.rl_algorithm import TorchBatchRLAlgorithm
+os.environ["D4RL_SUPPRESS_IMPORT_ERROR"] = "1"
+
 def experiment(variant):
-    import os
 
-    os.environ["D4RL_SUPPRESS_IMPORT_ERROR"] = "1"
-
-    import torch
-
-    import rlkit.envs.primitives_make_env as primitives_make_env
-    import rlkit.torch.pytorch_util as ptu
-    from rlkit.envs.mujoco_vec_wrappers import DummyVecEnv, StableBaselinesVecEnv
-    from rlkit.torch.model_based.dreamer.actor_models import (
-        ActorModel,
-        ConditionalActorModel,
-    )
-    from rlkit.torch.model_based.dreamer.dreamer import DreamerTrainer
-    from rlkit.torch.model_based.dreamer.dreamer_policy import (
-        ActionSpaceSamplePolicy,
-        DreamerPolicy,
-    )
-    from rlkit.torch.model_based.dreamer.dreamer_v2 import DreamerV2Trainer
-    from rlkit.torch.model_based.dreamer.episode_replay_buffer import (
-        EpisodeReplayBuffer,
-    )
-    from rlkit.torch.model_based.dreamer.kitchen_video_func import video_post_epoch_func
-    from rlkit.torch.model_based.dreamer.mlp import Mlp
-    from rlkit.torch.model_based.dreamer.path_collector import VecMdpPathCollector
-    from rlkit.torch.model_based.dreamer.world_models import WorldModel
-    from rlkit.torch.model_based.plan2explore.actor_models import (
-        ConditionalContinuousActorModel,
-    )
-    from rlkit.torch.model_based.rl_algorithm import TorchBatchRLAlgorithm
 
     env_suite = variant.get("env_suite", "kitchen")
     env_name = variant["env_name"]
@@ -202,3 +203,128 @@ def experiment(variant):
     algorithm.train()
     if variant.get("save_video", False):
         video_post_epoch_func(algorithm, -1)
+
+def eval_experiment(variant):
+    env_suite = variant.get("env_suite", "kitchen")
+    env_name = variant["env_name"]
+    env_kwargs = variant["env_kwargs"]
+    use_raw_actions = variant["use_raw_actions"]
+    num_expl_envs = variant["num_expl_envs"]
+    actor_model_class_name = variant.get("actor_model_class", "actor_model")
+
+    if num_expl_envs > 1:
+        env_fns = [
+            lambda: primitives_make_env.make_env(env_suite, env_name, env_kwargs)
+            for _ in range(num_expl_envs)
+        ]
+        expl_env = StableBaselinesVecEnv(env_fns=env_fns, start_method="fork")
+    else:
+        expl_envs = [primitives_make_env.make_env(env_suite, env_name, env_kwargs)]
+        expl_env = DummyVecEnv(
+            expl_envs, pass_render_kwargs=variant.get("pass_render_kwargs", False)
+        )
+    eval_envs = [
+        primitives_make_env.make_env(env_suite, env_name, env_kwargs) for _ in range(1)
+    ]
+    eval_env = DummyVecEnv(
+        eval_envs, pass_render_kwargs=variant.get("pass_render_kwargs", False)
+    )
+    if use_raw_actions:
+        discrete_continuous_dist = False
+        continuous_action_dim = eval_env.action_space.low.size
+        discrete_action_dim = 0
+        action_dim = continuous_action_dim
+    else:
+        discrete_continuous_dist = variant["actor_kwargs"]["discrete_continuous_dist"]
+        continuous_action_dim = eval_envs[0].max_arg_len
+        discrete_action_dim = eval_envs[0].num_primitives
+        if not discrete_continuous_dist:
+            continuous_action_dim = continuous_action_dim + discrete_action_dim
+            discrete_action_dim = 0
+        action_dim = continuous_action_dim + discrete_action_dim
+    world_model_class = WorldModel
+    obs_dim = expl_env.observation_space.low.size
+    if actor_model_class_name == "conditional_actor_model":
+        actor_model_class = ConditionalActorModel
+    elif actor_model_class_name == "continuous_conditional_actor_model":
+        actor_model_class = ConditionalContinuousActorModel
+    elif actor_model_class_name == "actor_model":
+        actor_model_class = ActorModel
+    if variant.get("load_from_path", False):
+        filename = variant["models_path"] + variant["pkl_file_name"]
+        print(filename)
+        data = torch.load(filename)
+        actor = data["trainer/actor"]
+        vf = data["trainer/vf"]
+        target_vf = data["trainer/target_vf"]
+        world_model = data["trainer/world_model"]
+    else:
+        world_model = world_model_class(
+            action_dim,
+            image_shape=eval_envs[0].image_shape,
+            **variant["model_kwargs"],
+            env=eval_envs[0],
+        )
+    if variant.get("retrain_actor_and_vf", True):
+        actor = actor_model_class(
+            variant["model_kwargs"]["model_hidden_size"],
+            world_model.feature_size,
+            hidden_activation=torch.nn.functional.elu,
+            discrete_action_dim=discrete_action_dim,
+            continuous_action_dim=continuous_action_dim,
+            env=eval_envs[0],
+            **variant["actor_kwargs"],
+        )
+        vf = Mlp(
+            hidden_sizes=[variant["model_kwargs"]["model_hidden_size"]]
+            * variant["vf_kwargs"]["num_layers"],
+            output_size=1,
+            input_size=world_model.feature_size,
+            hidden_activation=torch.nn.functional.elu,
+        )
+        target_vf = Mlp(
+            hidden_sizes=[variant["model_kwargs"]["model_hidden_size"]]
+            * variant["vf_kwargs"]["num_layers"],
+            output_size=1,
+            input_size=world_model.feature_size,
+            hidden_activation=torch.nn.functional.elu,
+        )
+    # TODO: load the model components from the checkpoint
+    checkpoint_path  = variant["checkpoint_path"]
+    with open(checkpoint_path, "r") as f:
+        saved_snapshot = pickle.load(f)
+    world_model.load_state_dict(saved_snapshot["trainer/world_model"])
+    actor.load_state_dict(saved_snapshot["trainer/actor"])
+    vf.load_state_dict(saved_snapshot["trainer/vf"])
+    target_vf.load_state_dict(saved_snapshot["trainer/target_vf"]) 
+
+    world_model = compile(world_model, mode="reduce_overhead")
+    actor = compile(actor, mode="reduce_overhead")
+    vf = compile(vf, mode="reduce_overhead")
+    target_vf = compile(target_vf, mode="reduce_overhead")
+
+
+    eval_policy = DreamerPolicy(
+        world_model,
+        actor,
+        obs_dim,
+        action_dim,
+        exploration=False,
+        expl_amount=0.0,
+        discrete_action_dim=discrete_action_dim,
+        continuous_action_dim=continuous_action_dim,
+        discrete_continuous_dist=discrete_continuous_dist,
+    )
+    
+    eval_path_collector = VecMdpPathCollector(
+        eval_env,
+        eval_policy,
+        save_env_in_snapshot=False,
+    )
+
+    max_path_length = variant["algorithm_kwargs"]["max_path_length"]
+    num_eval_steps_per_epoch = variant["algorithm_kwargs"]["num_eval_steps_per_epoch"] # TODO: check if this should just be replaced by a constant
+    eval_path_collector.collect_new_paths(
+        max_path_length,
+        num_eval_steps_per_epoch,
+    )

@@ -9,7 +9,7 @@ from rlkit.launchers.launcher_util import run_experiment
 from rlkit.torch.model_based.dreamer.experiments.experiment_utils import (
     preprocess_variant,
 )
-from rlkit.torch.model_based.dreamer.experiments.kitchen_dreamer import experiment
+from rlkit.torch.model_based.dreamer.experiments.kitchen_dreamer import eval_experiment
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -25,7 +25,7 @@ if __name__ == "__main__":
     with open(saved_experiment_path, "rb") as f:
         saved_experiment = pickle.load(f)['run_experiment_here_kwargs']
     # modify the variant a little
-    saved_experiment["variant"]["checkpoint_path"] = args.checkpoint_path
+    saved_experiment["variant"]["checkpoint_path"] = args.checkpoint_path + "params.pkl"
     saved_experiment["variant"]["log_dir"] = args.load_dir
     saved_experiment["variant"]["num_expl_envs"] = 1
     #search_space = {"env_name": [args.env]}
@@ -37,8 +37,8 @@ if __name__ == "__main__":
         #variant["exp_id"] = 0
 
         # TODO: eval_experiment code
-        eval_experiment(
-            experiment,
+        run_experiment(
+            eval_experiment,
             exp_prefix=args.exp_prefix,
             mode=args.mode,
             variant=variant,
