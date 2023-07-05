@@ -324,7 +324,28 @@ def eval_experiment(variant):
 
     max_path_length = variant["algorithm_kwargs"]["max_path_length"]
     num_eval_steps_per_epoch = variant["algorithm_kwargs"]["num_eval_steps_per_epoch"] # TODO: check if this should just be replaced by a constant
-    eval_path_collector.collect_new_paths(
+    saved_paths = eval_path_collector.collect_new_paths(
         max_path_length,
         num_eval_steps_per_epoch,
     )
+    log_dir = checkpoint_path.split("params.pkl")[0]
+    primitive_idx_to_name = eval_env.envs[0].primitive_idx_to_name
+    primitive_name_to_action_idx = eval_env.envs[0].primitive_name_to_action_idx
+    saved_obs = []
+    saved_acs = []
+    for vec_eval_path in saved_paths:
+        for path in vec_eval_path:
+            saved_obs.append(path["observations"])
+            saved_acs.append(path["actions"])
+
+
+    saved_data = {
+        "obs": saved_obs,
+        "acs": saved_acs,
+        "primitive_idx_to_name": primitive_idx_to_name,
+        "primitive_name_to_action_idx": primitive_name_to_action_idx,
+    }
+    saved_data_path = os.path.join(log_dir, "saved_data.pkl")
+    with open(saved_data_path, "wb") as f:
+        pickle.dump(saved_data, f)
+    print(f"Saved data to {saved_data_path}.")
