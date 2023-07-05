@@ -26,53 +26,6 @@ if __name__ == "__main__":
     parser.add_argument("--checkpoint_path", type=str, default=None, required=True)
     args = parser.parse_args()
     exp_prefix = args.exp_prefix
-    """
-    variant = dict(
-        #algorithm_kwargs=dict(
-        #    entropy_coef=0.01,
-        #    value_loss_coef=0.5,
-        #    lr=3e-4,
-        #    num_mini_batch=64,
-        #    ppo_epoch=10,
-        #    clip_param=0.2,
-        #    eps=1e-5,
-        #    max_grad_norm=0.5,
-        #),
-        rollout_kwargs=dict(
-            use_gae=True,
-            gae_lambda=0.95,
-            use_proper_time_limits=True,
-            gamma=0.99
-        ),
-        env_kwargs=dict(
-            dense=False,
-            image_obs=True,
-            action_scale=1.4,
-            use_workspace_limits=True,
-            imheight=84,
-            imwidth=84,
-            usage_kwargs=dict(
-                use_dm_backend=True,
-                use_raw_action_wrappers=False,
-                use_image_obs=True,
-                max_path_length=15,
-                unflatten_images=True,
-            ),
-            image_kwargs=dict(),
-        ),
-        #actor_kwargs=dict(recurrent=False, hidden_size=512, hidden_activation="relu"),
-        num_processes=1,
-        #num_env_steps=int(5e5),
-        #num_steps=2048 // 12,
-        log_interval=1,
-        eval_interval=1,
-        use_raw_actions=False,
-        env_suite="kitchen",
-        use_linear_lr_decay=False,
-        load_dir=args.load_dir,
-    )
-    """
-    # fix issue with there being checkpoints ina different spot
     saved_experiment_path = os.path.join(args.load_dir, "experiment.pkl")
     with open(saved_experiment_path, "rb") as f:
         saved_experiment = pickle.load(f)['run_experiment_here_kwargs']
@@ -82,21 +35,12 @@ if __name__ == "__main__":
     saved_experiment["variant"]["num_processes"] = 1
     
 
-    #search_space = {"rollout_kwargs.gamma": [0.99, 0.95], "env_name": [args.env]}
-    #sweeper = hyp.DeterministicHyperparameterSweeper(
-    #    #search_space,
-    #    default_parameters=variant,
-    #)
-    #for exp_id, variant in enumerate(sweeper.iterate_hyperparameters()):
     for _ in range(args.num_seeds):
         seed = random.randint(0, 100000)
-        #variant["seed"] = seed
-        #variant["exp_id"] = exp_id
         run_experiment(
             experiment,
             exp_prefix=args.exp_prefix,
             mode=args.mode,
-            #variant=variant,
             variant=saved_experiment["variant"],
             use_gpu=True,
             snapshot_mode="last",
@@ -104,5 +48,4 @@ if __name__ == "__main__":
                 "utf-8"
             )[:-1],
             seed=seed,
-            #$exp_id=exp_id,
         )
