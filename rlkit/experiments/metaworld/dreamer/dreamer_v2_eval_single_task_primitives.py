@@ -25,7 +25,7 @@ if __name__ == "__main__":
     with open(saved_experiment_path, "rb") as f:
         saved_experiment = pickle.load(f)['run_experiment_here_kwargs']
     # modify the variant a little
-    saved_experiment["variant"]["checkpoint_path"] = args.checkpoint_path + "params.pkl"
+    saved_experiment["variant"]["checkpoint_path"] = args.load_dir + "params.pkl"
     saved_experiment["variant"]["log_dir"] = args.load_dir
     saved_experiment["variant"]["num_expl_envs"] = 1
     #search_space = {"env_name": [args.env]}

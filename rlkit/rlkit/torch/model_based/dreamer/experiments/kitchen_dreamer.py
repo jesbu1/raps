@@ -27,11 +27,11 @@ from rlkit.torch.model_based.plan2explore.actor_models import (
     ConditionalContinuousActorModel,
 )
 from rlkit.torch.model_based.rl_algorithm import TorchBatchRLAlgorithm
+
 os.environ["D4RL_SUPPRESS_IMPORT_ERROR"] = "1"
 
+
 def experiment(variant):
-
-
     env_suite = variant.get("env_suite", "kitchen")
     env_name = variant["env_name"]
     env_kwargs = variant["env_kwargs"]
@@ -118,8 +118,8 @@ def experiment(variant):
             input_size=world_model.feature_size,
             hidden_activation=torch.nn.functional.elu,
         )
-    
-    #world_model = compile(world_model)
+
+    # world_model = compile(world_model)
     actor = compile(actor)
     vf = compile(vf)
     target_vf = compile(target_vf)
@@ -146,7 +146,7 @@ def experiment(variant):
         continuous_action_dim=continuous_action_dim,
         discrete_continuous_dist=discrete_continuous_dist,
     )
-    
+
     rand_policy = ActionSpaceSamplePolicy(expl_env)
 
     expl_path_collector = VecMdpPathCollector(
@@ -203,6 +203,7 @@ def experiment(variant):
     algorithm.train()
     if variant.get("save_video", False):
         video_post_epoch_func(algorithm, -1)
+
 
 def eval_experiment(variant):
     env_suite = variant.get("env_suite", "kitchen")
@@ -290,19 +291,26 @@ def eval_experiment(variant):
             hidden_activation=torch.nn.functional.elu,
         )
     # TODO: load the model components from the checkpoint
-    checkpoint_path  = variant["checkpoint_path"]
-    with open(checkpoint_path, "r") as f:
-        saved_snapshot = pickle.load(f)
-    world_model.load_state_dict(saved_snapshot["trainer/world_model"])
-    actor.load_state_dict(saved_snapshot["trainer/actor"])
-    vf.load_state_dict(saved_snapshot["trainer/vf"])
-    target_vf.load_state_dict(saved_snapshot["trainer/target_vf"]) 
+    checkpoint_path = variant["checkpoint_path"]
+    # torch load the params.pkl
+    saved_snapshot = torch.load(checkpoint_path)
 
-    world_model = compile(world_model, mode="reduce_overhead")
-    actor = compile(actor, mode="reduce_overhead")
-    vf = compile(vf, mode="reduce_overhead")
-    target_vf = compile(target_vf, mode="reduce_overhead")
+    # get rid of "_orig_mod." in the keys
+    def remove_orig_mod(weight_dict):
+        new_weight_dict = {
+            k.replace("_orig_mod.", ""): v for k, v in weight_dict.items()
+        }
+        return new_weight_dict
 
+    world_model.load_state_dict(remove_orig_mod(saved_snapshot["trainer/world_model"]))
+    actor.load_state_dict(remove_orig_mod(saved_snapshot["trainer/actor"]))
+    vf.load_state_dict(remove_orig_mod(saved_snapshot["trainer/vf"]))
+    target_vf.load_state_dict(remove_orig_mod(saved_snapshot["trainer/target_vf"]))
+
+    world_model = compile(world_model, mode="reduce-overhead").to(ptu.device)
+    actor = compile(actor, mode="reduce-overhead").to(ptu.device)
+    vf = compile(vf, mode="reduce-overhead").to(ptu.device)
+    target_vf = compile(target_vf, mode="reduce-overhead").to(ptu.device)
 
     eval_policy = DreamerPolicy(
         world_model,
@@ -315,7 +323,7 @@ def eval_experiment(variant):
         continuous_action_dim=continuous_action_dim,
         discrete_continuous_dist=discrete_continuous_dist,
     )
-    
+
     eval_path_collector = VecMdpPathCollector(
         eval_env,
         eval_policy,
@@ -323,21 +331,21 @@ def eval_experiment(variant):
     )
 
     max_path_length = variant["algorithm_kwargs"]["max_path_length"]
-    num_eval_steps_per_epoch = variant["algorithm_kwargs"]["num_eval_steps_per_epoch"] # TODO: check if this should just be replaced by a constant
+    num_eval_steps_per_epoch = variant["algorithm_kwargs"][
+        "num_eval_steps_per_epoch"
+    ]  # TODO: check if this should just be replaced by a constant
     saved_paths = eval_path_collector.collect_new_paths(
         max_path_length,
         num_eval_steps_per_epoch,
     )
-    log_dir = checkpoint_path.split("params.pkl")[0]
+    log_dir = variant["log_dir"]
     primitive_idx_to_name = eval_env.envs[0].primitive_idx_to_name
     primitive_name_to_action_idx = eval_env.envs[0].primitive_name_to_action_idx
     saved_obs = []
     saved_acs = []
     for vec_eval_path in saved_paths:
-        for path in vec_eval_path:
-            saved_obs.append(path["observations"])
-            saved_acs.append(path["actions"])
-
+        saved_obs.append(vec_eval_path["observations"])
+        saved_acs.append(vec_eval_path["actions"])
 
     saved_data = {
         "obs": saved_obs,
