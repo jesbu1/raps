@@ -1,4 +1,5 @@
 import numpy as np
+from PIL import Image
 import torch
 from rad.kitchen_train import compute_path_info
 from rlkit.core import logger as rlkit_logger
@@ -49,7 +50,15 @@ def evaluate(
                 action, render_every_step=render_every_step
             )
             if render_every_step:
-                saved_obs.append([eval_env.img_array for eval_env in eval_envs.envs])
+                assert len(eval_envs.envs) == 1
+                saved_obs.append(
+                    np.stack(
+                        [
+                            np.asarray(Image.fromarray(img).resize((200, 200)))
+                            for img in eval_envs.envs[0].img_array
+                        ]
+                    )
+                )
             saved_acs.append(action)
             eval_masks = torch.tensor(
                 [[0.0] if done_ else [1.0] for done_ in done],
