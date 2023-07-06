@@ -7,9 +7,17 @@ from a2c_ppo_acktr import utils
 from a2c_ppo_acktr.envs import make_vec_envs
 
 
-def evaluate(actor_critic, eval_env_args, eval_env_kwargs, obs_rms, num_episodes, device):
-    saved_obss= []
-    saved_acss= []
+def evaluate(
+    actor_critic,
+    eval_env_args,
+    eval_env_kwargs,
+    obs_rms,
+    num_episodes,
+    device,
+    render_every_step=False,
+):
+    saved_acss = []
+    saved_obss = []
     eval_envs = make_vec_envs(
         *eval_env_args, disable_time_limit_mask=True, **eval_env_kwargs
     )
@@ -23,7 +31,6 @@ def evaluate(actor_critic, eval_env_args, eval_env_kwargs, obs_rms, num_episodes
         saved_obs = []
         saved_acs = []
         obs = eval_envs.reset()
-        saved_obs.append(obs)
         eval_recurrent_hidden_states = torch.zeros(
             1, actor_critic.recurrent_hidden_state_size, device=device
         )
@@ -37,9 +44,13 @@ def evaluate(actor_critic, eval_env_args, eval_env_kwargs, obs_rms, num_episodes
                 )
 
             # Obser reward and next obs
-            obs, reward, done, infos = eval_envs.step(action)
+            # check function signature has render every step
+            obs, reward, done, infos = eval_envs.step(
+                action, render_every_step=render_every_step
+            )
+            if render_every_step:
+                saved_obs.append([eval_env.img_array for eval_env in eval_envs.envs])
             saved_acs.append(action)
-            saved_obs.append(obs)
             eval_masks = torch.tensor(
                 [[0.0] if done_ else [1.0] for done_ in done],
                 dtype=torch.float32,
@@ -52,7 +63,7 @@ def evaluate(actor_critic, eval_env_args, eval_env_kwargs, obs_rms, num_episodes
 
             rewards += reward
         all_infos.append(ep_infos)
-        saved_obss.append(torch.cat(saved_obs).cpu())
+        saved_obss.append(saved_obs)
         saved_acss.append(torch.cat(saved_acs).cpu())
     mean_ep_reward = rewards.sum().item() / num_episodes
     rlkit_logger.record_dict({"Average Returns": mean_ep_reward}, prefix="evaluation/")

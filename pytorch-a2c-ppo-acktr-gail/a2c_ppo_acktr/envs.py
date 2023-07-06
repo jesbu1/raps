@@ -48,7 +48,10 @@ def make_env(
         gym.logger.set_level(40)
         env = primitives_make_env.make_env(env_suite, env_class, env_kwargs)
 
-        if str(env.__class__.__name__).find('TimeLimit') >= 0 and not disable_time_limit_mask:
+        if (
+            str(env.__class__.__name__).find("TimeLimit") >= 0
+            and not disable_time_limit_mask
+        ):
             env = TimeLimitMask(env)
         env.seed(int(seed))
 
@@ -108,7 +111,7 @@ def make_vec_envs(
     if num_frame_stack is not None:
         envs = VecPyTorchFrameStack(envs, num_frame_stack, device)
     elif len(envs.observation_space.shape) == 3:
-        envs = VecPyTorchFrameStack(envs, 4, device)
+        envs = VecPyTorchFrameStack(envs, 4, device)  # hardcoded frame-stack
     return envs
 
 
@@ -173,12 +176,12 @@ class VecPyTorch(VecEnvWrapper):
         obs = torch.from_numpy(obs).float().to(self.device)
         return obs
 
-    def step_async(self, actions):
+    def step_async(self, actions, **kwargs):
         if isinstance(actions, torch.LongTensor):
             # Squeeze the dimension for discrete actions
             actions = actions.squeeze(1)
         actions = actions.cpu().numpy()
-        self.venv.step_async(actions)
+        self.venv.step_async(actions, **kwargs)
 
     def step_wait(self):
         obs, reward, done, info = self.venv.step_wait()
@@ -239,7 +242,7 @@ class VecPyTorchFrameStack(VecEnvWrapper):
         self.stacked_obs[:, : -self.shape_dim0] = self.stacked_obs[
             :, self.shape_dim0 :
         ].clone()
-        for (i, new) in enumerate(news):
+        for i, new in enumerate(news):
             if new:
                 self.stacked_obs[i] = 0
         self.stacked_obs[:, -self.shape_dim0 :] = obs

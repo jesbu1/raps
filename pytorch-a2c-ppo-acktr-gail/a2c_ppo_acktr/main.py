@@ -207,9 +207,13 @@ def experiment(variant):
         save_interval = 5
         if j % save_interval == 0 or j == num_updates - 1:
             torch.save(
-                [actor_critic.state_dict(), getattr(utils.get_vec_normalize(envs), "obs_rms", None)],
+                [
+                    actor_critic.state_dict(),
+                    getattr(utils.get_vec_normalize(envs), "obs_rms", None),
+                ],
                 os.path.join(log_dir, "ckpt.pt"),
             )
+
 
 def eval_experiment(variant):
     env_name = variant["env_name"]
@@ -254,7 +258,7 @@ def eval_experiment(variant):
     # load the state_dict of the model
     # check if it's a state_dict or an nn.module
     actor_critic, obs_rms = torch.load(checkpoint_path, map_location=device)
-    #if isinstance(actor_critic, nn.Module):
+    # if isinstance(actor_critic, nn.Module):
     #    actor_critic.to(device)
     if isinstance(actor_critic, dict):
         temp_actor_critic = Policy(
@@ -273,14 +277,13 @@ def eval_experiment(variant):
         temp_actor_critic.to(device)
         actor_critic = temp_actor_critic
 
-    #agent = algo.PPO(actor_critic, **variant["algorithm_kwargs"])
+    # agent = algo.PPO(actor_critic, **variant["algorithm_kwargs"])
 
     obs = envs.reset()
     policy_step_obs = obs
 
     start = time.time()
     obs_rms = utils.get_vec_normalize(envs).obs_rms
-    # TODO: saved actions are not accurate, we want the actions from teh perspective of the policy and not from the perspective of the environment
     saved_obs, saved_acs = evaluate(
         actor_critic,
         eval_env_args,
@@ -288,7 +291,11 @@ def eval_experiment(variant):
         obs_rms,
         5,
         device,
+        render_every_step=True,  # to ensure that the saved_obs are accurate
     )
+    import pdb
+
+    pdb.set_trace()
     primitive_idx_to_name = envs.envs[0].primitive_idx_to_name
     primitive_name_to_action_idx = envs.envs[0].primitive_name_to_action_idx
     # save the observations, acs, pirmitive_idx_to_name, and primitive_name_to_action_idx with pickle
@@ -303,8 +310,7 @@ def eval_experiment(variant):
         pickle.dump(saved_data, f)
     print(f"Saved data to {saved_data_path}.")
 
-
-    #if j % save_interval == 0 or j == num_updates - 1:
+    # if j % save_interval == 0 or j == num_updates - 1:
     #    torch.save(
     #        [actor_critic, getattr(utils.get_vec_normalize(envs), "obs_rms", None)],
     #        os.path.join(log_dir, "ckpt.pt"),
