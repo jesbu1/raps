@@ -19,6 +19,8 @@ def vec_rollout(
     full_o_postprocess_func=None,
     reset_callback=None,
     save_video=True,
+    render_every_step=False,
+    render_im_shape=(128, 128),
 ):
     if render_kwargs is None:
         render_kwargs = {}
@@ -35,6 +37,7 @@ def vec_rollout(
     agent_infos = []
     env_infos = []
     next_observations = []
+    per_step_img_arrays = []
     path_length = 0
 
     o = env.reset()
@@ -65,7 +68,14 @@ def vec_rollout(
         if full_o_postprocess_func:
             full_o_postprocess_func(env, agent, o)
 
-        next_o, r, d, env_info = env.step(copy.deepcopy(a))
+        next_o, r, d, env_info = env.step(
+            copy.deepcopy(a),
+            render_every_step=render_every_step,
+            render_im_shape=render_im_shape,
+        )
+        if render_every_step:
+            assert env.n_envs == 1
+            per_step_img_arrays.append(np.concatenate([env.envs[0].img_array]))
         if render:
             img = env.render(mode="rgb_array", imwidth=256, imheight=256)
             cv2.imshow("img", img)
@@ -82,6 +92,8 @@ def vec_rollout(
         if d.all():
             break
         o = next_o
+    if render_every_step:
+        per_step_img_arrays = np.concatenate(per_step_img_arrays)
     actions = np.array(actions)
     if len(actions.shape) == 1:
         actions = np.expand_dims(actions, 1)
@@ -111,4 +123,5 @@ def vec_rollout(
         terminals=np.array(terminals),
         agent_infos=agent_infos,
         env_infos=env_infos,
+        per_step_img_arrays=per_step_img_arrays,
     )

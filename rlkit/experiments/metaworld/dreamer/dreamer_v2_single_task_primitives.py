@@ -47,7 +47,7 @@ if __name__ == "__main__":
         algorithm="DreamerV2",
         version="normal",
         replay_buffer_size=int(5e5),
-        #replay_buffer_size=int(1e5),
+        # replay_buffer_size=int(1e5),
         algorithm_kwargs=algorithm_kwargs,
         use_raw_actions=False,
         env_suite="metaworld",
@@ -116,7 +116,7 @@ if __name__ == "__main__":
         num_expl_envs=5 * 2,
         num_eval_envs=1,
         expl_amount=0.3,
-        save_video=True,
+        save_video=False,
     )
 
     search_space = {"env_name": [args.env]}

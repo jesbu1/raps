@@ -16,25 +16,23 @@ if __name__ == "__main__":
     parser.add_argument("--exp_prefix", type=str, default="test")
     parser.add_argument("--num_seeds", type=int, default=1)
     parser.add_argument("--mode", type=str, default="local")
-    parser.add_argument('--load_dir', type=str, default=None, required=True)
+    parser.add_argument("--load_dir", type=str, default=None, required=True)
     parser.add_argument("--env", type=str, default="")
     args = parser.parse_args()
 
     # load the variant
     saved_experiment_path = os.path.join(args.load_dir, "experiment.pkl")
     with open(saved_experiment_path, "rb") as f:
-        saved_experiment = pickle.load(f)['run_experiment_here_kwargs']
+        saved_experiment = pickle.load(f)["run_experiment_here_kwargs"]
     # modify the variant a little
     saved_experiment["variant"]["checkpoint_path"] = args.load_dir + "params.pkl"
     saved_experiment["variant"]["log_dir"] = args.load_dir
     saved_experiment["variant"]["num_expl_envs"] = 1
-    #search_space = {"env_name": [args.env]}
 
     variant = preprocess_variant(saved_experiment["variant"], debug=False)
     for _ in range(args.num_seeds):
         seed = random.randint(0, 100000)
         variant["seed"] = seed
-        #variant["exp_id"] = 0
 
         # TODO: eval_experiment code
         run_experiment(
@@ -48,5 +46,4 @@ if __name__ == "__main__":
                 "utf-8"
             )[:-1],
             seed=seed,
-            #exp_id=exp_id,
         )

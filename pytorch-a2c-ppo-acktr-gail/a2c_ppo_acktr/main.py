@@ -302,9 +302,3 @@ def eval_experiment(variant):
     with open(saved_data_path, "wb") as f:
         pickle.dump(saved_data, f)
     print(f"Saved data to {saved_data_path}.")
-
-    # if j % save_interval == 0 or j == num_updates - 1:
-    #    torch.save(
-    #        [actor_critic, getattr(utils.get_vec_normalize(envs), "obs_rms", None)],
-    #        os.path.join(log_dir, "ckpt.pt"),
-    #    )

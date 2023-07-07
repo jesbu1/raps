@@ -228,7 +228,7 @@ def eval_experiment(variant):
         primitives_make_env.make_env(env_suite, env_name, env_kwargs) for _ in range(1)
     ]
     eval_env = DummyVecEnv(
-        eval_envs, pass_render_kwargs=variant.get("pass_render_kwargs", False)
+        eval_envs, pass_render_kwargs=variant.get("pass_render_kwargs", True)
     )
     if use_raw_actions:
         discrete_continuous_dist = False
@@ -328,12 +328,12 @@ def eval_experiment(variant):
         eval_env,
         eval_policy,
         save_env_in_snapshot=False,
+        render_every_step=True,
+        render_im_shape=(128, 128),
     )
 
     max_path_length = variant["algorithm_kwargs"]["max_path_length"]
-    num_eval_steps_per_epoch = variant["algorithm_kwargs"][
-        "num_eval_steps_per_epoch"
-    ]  # TODO: check if this should just be replaced by a constant
+    num_eval_steps_per_epoch = max_path_length
     saved_paths = eval_path_collector.collect_new_paths(
         max_path_length,
         num_eval_steps_per_epoch,
@@ -344,9 +344,8 @@ def eval_experiment(variant):
     saved_obs = []
     saved_acs = []
     for vec_eval_path in saved_paths:
-        saved_obs.append(vec_eval_path["observations"])
+        saved_obs.append(vec_eval_path["per_step_img_arrays"])
         saved_acs.append(vec_eval_path["actions"])
-
     saved_data = {
         "obs": saved_obs,
         "acs": saved_acs,

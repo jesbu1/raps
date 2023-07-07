@@ -17,6 +17,8 @@ class VecMdpPathCollector(PathCollector):
         save_env_in_snapshot=False,
         env_params=None,
         env_class=None,
+        render_every_step=False,
+        render_im_shape=(128, 128),
     ):
         if render_kwargs is None:
             render_kwargs = {}
@@ -35,6 +37,9 @@ class VecMdpPathCollector(PathCollector):
         self.env_params = env_params
         self.env_class = env_class
 
+        self._render_every_step = render_every_step
+        self._render_im_shape = render_im_shape
+
     def collect_new_paths(
         self,
         max_path_length,
@@ -52,6 +57,8 @@ class VecMdpPathCollector(PathCollector):
                 max_path_length=max_path_length,
                 render=self._render,
                 render_kwargs=self._render_kwargs,
+                render_every_step=self._render_every_step,
+                render_im_shape=self._render_im_shape,
             )
             path_len = len(path["actions"])
             num_steps_collected += path_len * self._env.n_envs
@@ -68,6 +75,7 @@ class VecMdpPathCollector(PathCollector):
                     "terminals",
                     "rewards",
                     "next_observations",
+                    "per_step_img_arrays",  # i'm not sure why everything else here is 1: but i'll also put this here too \_(-_-)_/
                 ]:
                     log_paths[ctr][k] = path[k][1:, j]
                 log_paths[ctr]["agent_infos"] = [{}] * path["rewards"][1:, j].shape[0]
