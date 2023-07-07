@@ -47,15 +47,15 @@ def evaluate(
             # Obser reward and next obs
             # check function signature has render every step
             obs, reward, done, infos = eval_envs.step(
-                action, render_every_step=render_every_step
+                action, render_every_step=render_every_step, render_im_shape=(128, 128)
             )
             if render_every_step:
                 assert len(eval_envs.envs) == 1
                 saved_obs.append(
                     np.stack(
                         [
-                            np.asarray(Image.fromarray(img).resize((200, 200)))
-                            for img in eval_envs.envs[0].img_array
+                            # np.asarray(Image.fromarray(img).resize((200, 200)))
+                            eval_envs.envs[0].img_array
                         ]
                     )
                 )
