@@ -279,23 +279,16 @@ def eval_experiment(variant):
 
     # agent = algo.PPO(actor_critic, **variant["algorithm_kwargs"])
 
-    obs = envs.reset()
-    policy_step_obs = obs
-
-    start = time.time()
     obs_rms = utils.get_vec_normalize(envs).obs_rms
     saved_obs, saved_acs = evaluate(
         actor_critic,
         eval_env_args,
         eval_env_kwargs,
         obs_rms,
-        5,
+        1,
         device,
         render_every_step=True,  # to ensure that the saved_obs are accurate
     )
-    import pdb
-
-    pdb.set_trace()
     primitive_idx_to_name = envs.envs[0].primitive_idx_to_name
     primitive_name_to_action_idx = envs.envs[0].primitive_name_to_action_idx
     # save the observations, acs, pirmitive_idx_to_name, and primitive_name_to_action_idx with pickle

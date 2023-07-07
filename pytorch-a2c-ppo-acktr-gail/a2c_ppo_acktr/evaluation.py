@@ -52,14 +52,14 @@ def evaluate(
             if render_every_step:
                 assert len(eval_envs.envs) == 1
                 saved_obs.append(
-                    np.stack(
+                    np.concatenate(
                         [
                             # np.asarray(Image.fromarray(img).resize((200, 200)))
                             eval_envs.envs[0].img_array
                         ]
                     )
                 )
-            saved_acs.append(action)
+            saved_acs.append(action.cpu().numpy())
             eval_masks = torch.tensor(
                 [[0.0] if done_ else [1.0] for done_ in done],
                 dtype=torch.float32,
@@ -72,8 +72,8 @@ def evaluate(
 
             rewards += reward
         all_infos.append(ep_infos)
-        saved_obss.append(saved_obs)
-        saved_acss.append(torch.cat(saved_acs).cpu())
+        saved_obss.append(np.concatenate(saved_obs))
+        saved_acss.append(np.concatenate(saved_acs))
     mean_ep_reward = rewards.sum().item() / num_episodes
     rlkit_logger.record_dict({"Average Returns": mean_ep_reward}, prefix="evaluation/")
     statistics = compute_path_info(all_infos)
