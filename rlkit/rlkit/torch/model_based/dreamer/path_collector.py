@@ -75,7 +75,6 @@ class VecMdpPathCollector(PathCollector):
                     "terminals",
                     "rewards",
                     "next_observations",
-                    "per_step_img_arrays",  # i'm not sure why everything else here is 1: but i'll also put this here too \_(-_-)_/
                 ]:
                     log_paths[ctr][k] = path[k][1:, j]
                 log_paths[ctr]["agent_infos"] = [{}] * path["rewards"][1:, j].shape[0]
@@ -84,6 +83,11 @@ class VecMdpPathCollector(PathCollector):
                 for key, value in path[k].items():
                     for z in range(value[j].shape[0]):
                         log_paths[ctr][k][z][key] = value[j][z]
+                k = "per_step_img_arrays"
+                if (
+                    k in path.keys() and len(path[k]) > 0
+                ):  # if render_every_step was true
+                    log_paths[ctr][k] = path[k][j]
                 ctr += 1
         self._epoch_paths.extend(log_paths)  # only used for logging
         return paths
