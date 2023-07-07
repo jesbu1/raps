@@ -92,8 +92,6 @@ def vec_rollout(
         if d.all():
             break
         o = next_o
-    if render_every_step:
-        per_step_img_arrays = np.concatenate(per_step_img_arrays)
     actions = np.array(actions)
     if len(actions.shape) == 1:
         actions = np.expand_dims(actions, 1)

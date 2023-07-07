@@ -72,7 +72,9 @@ def evaluate(
 
             rewards += reward
         all_infos.append(ep_infos)
-        saved_obss.append(np.concatenate(saved_obs))
+        saved_obss.append(
+            saved_obs
+        )  # don't concatenate so we know what actions are associated with what observations
         saved_acss.append(np.concatenate(saved_acs))
     mean_ep_reward = rewards.sum().item() / num_episodes
     rlkit_logger.record_dict({"Average Returns": mean_ep_reward}, prefix="evaluation/")
