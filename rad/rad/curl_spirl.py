@@ -73,6 +73,7 @@ class ActionEncoder(nn.Module):
                 n_layers,
             )
         self.norm = nn.LayerNorm(hidden_dim)
+        self.nonlinearity = nn.ReLU()
         self.linear = nn.Linear(hidden_dim, output_dim * 2)
         self.model_type = model_type
 
@@ -90,12 +91,40 @@ class ActionEncoder(nn.Module):
 class ActionDecoder(nn.Module):
     def __init__(
         self, 
-        action_dim,
+        latent_dim,
         hidden_dim,
         output_dim,
         n_layers,
         model_type="rnn",
+        closed_loop=False,
+        cl_encoder=None,
         ):
+        super().__init__()
+        if model_type == "rnn":
+            self.model = nn.GRU(
+                latent_dim,
+                hidden_dim,
+                n_layers,
+                batch_first=True,
+            )
+        elif model_type == "transformer":
+            self.model = nn.TransformerEncoder(
+                nn.TransformerEncoderLayer(
+                    d_model=latent_dim,
+                    nhead=4,
+                    dim_feedforward=hidden_dim,
+                    dropout=0.0,
+                ),
+                n_layers,
+            )
+        self.norm = nn.LayerNorm(hidden_dim)
+        self.nonlinearity = nn.ReLU()
+        self.linear = nn.Linear(hidden_dim, output_dim)
+        self.model_type = model_type
+        self.closed_loop = closed_loop
+        self.cl_encoder = cl_encoder
+    
+
 
 
 
