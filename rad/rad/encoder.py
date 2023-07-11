@@ -151,9 +151,15 @@ _AVAILABLE_ENCODERS = {"pixel": PixelEncoder, "identity": IdentityEncoder}
 
 
 def make_encoder(
-    encoder_type, obs_shape, feature_dim, num_layers, num_filters, output_logits=False
+    encoder_type,
+    obs_shape,
+    feature_dim,
+    num_layers,
+    num_filters,
+    output_logits=False,
+    *args
 ):
     assert encoder_type in _AVAILABLE_ENCODERS
     return _AVAILABLE_ENCODERS[encoder_type](
-        obs_shape, feature_dim, num_layers, num_filters, output_logits
+        obs_shape, feature_dim, num_layers, num_filters, output_logits, *args
     )

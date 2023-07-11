@@ -15,7 +15,6 @@ from rad.encoder import make_encoder
 
 LOG_FREQ = 10000
 
-
 class ObsPrior(nn.Module):
     def __init__(
         self,
@@ -26,6 +25,8 @@ class ObsPrior(nn.Module):
         obs_encoder_output_dim,
         obs_encoder_num_layers,
         obs_encoder_num_filters,
+        use_film,
+        film_input_dim=0,
     ):
         super().__init__()
         self.encoder = make_encoder(
@@ -35,14 +36,16 @@ class ObsPrior(nn.Module):
             obs_encoder_num_layers,
             obs_encoder_num_filters,
             output_logits=True,
+            film=use_film,
+            film_input_dim=film_input_dim, 
         )
         self.linear = nn.Sequential(
             *[nn.Linear(obs_encoder_output_dim, obs_encoder_output_dim), nn.ReLU() for _ in range(num_linear_layers - 1)],
             nn.Linear(obs_encoder_output_dim, output_dim),
         )
 
-    def forward(self, obs):
-        h = self.encoder(obs)
+    def forward(self, obs, one_hot=None):
+        h = self.encoder(obs, film_input=one_hot)
         return self.linear(h)
 
 class ActionEncoder(nn.Module):
@@ -53,11 +56,12 @@ class ActionEncoder(nn.Module):
         output_dim,
         n_layers,
         model_type="rnn",
+        one_hot_dim=0,
     ):
         super().__init__()
         if model_type == "rnn":
             self.model = nn.GRU(
-                action_dim,
+                action_dim + one_hot_dim,
                 hidden_dim,
                 n_layers,
                 batch_first=True,
@@ -65,7 +69,7 @@ class ActionEncoder(nn.Module):
         elif model_type == "transformer":
             self.model = nn.TransformerEncoder(
                 nn.TransformerEncoderLayer(
-                    d_model=action_dim,
+                    d_model=action_dim + one_hot_dim,
                     nhead=4,
                     dim_feedforward=hidden_dim,
                     dropout=0.0,
@@ -74,10 +78,12 @@ class ActionEncoder(nn.Module):
             )
         self.norm = nn.LayerNorm(hidden_dim)
         self.nonlinearity = nn.ReLU()
-        self.linear = nn.Linear(hidden_dim, output_dim * 2)
+        self.linear = nn.Linear(hidden_dim + one_hot_dim, output_dim * 2)
         self.model_type = model_type
 
-    def forward(self, action_traj):
+    def forward(self, action_traj, one_hot=None):
+        if one_hot:
+            action_traj = torch.cat((action_traj, one_hot), -1)
         if self.model_type == "rnn":
             _, h = self.model(action_traj)
             h = h[-1]
@@ -85,6 +91,9 @@ class ActionEncoder(nn.Module):
             h = self.model(action_traj)
 
         h = self.norm(h)
+        h = self.nonlinearity(h)
+        if one_hot:
+            h = torch.cat((h, one_hot), -1)
         mu, log_std = self.linear(h).chunk(2, dim=-1)
         return mu, log_std
 
@@ -100,9 +109,17 @@ class ActionDecoder(nn.Module):
         cl_encoder=None,
         ):
         super().__init__()
+        self.closed_loop = closed_loop
+        if closed_loop:
+            assert cl_encoder is not None
+            self.cl_encoder = cl_encoder
+            self.obs_input_size = cl_encoder.feature_dim
+        else:
+            self.obs_input_size = 0
+
         if model_type == "rnn":
             self.model = nn.GRU(
-                latent_dim,
+                latent_dim + self.obs_input_size,
                 hidden_dim,
                 n_layers,
                 batch_first=True,
@@ -123,6 +140,20 @@ class ActionDecoder(nn.Module):
         self.model_type = model_type
         self.closed_loop = closed_loop
         self.cl_encoder = cl_encoder
+
+    def forward(self, action_traj, obs=None, one_hot=None):
+        if self.closed_loop:
+            obs = self.cl_encoder(obs, one_hot)
+            obs = obs.unsqueeze(1).expand(-1, action_traj.shape[1], -1)
+            action_traj = torch.cat((action_traj, obs), -1)
+        if self.model_type == "rnn":
+            _, h = self.model(action_traj)
+            h = h[-1]
+        elif self.model_type == "transformer":
+            h = self.model(action_traj)
+        h = self.norm(h)
+        h = self.nonlinearity(h)
+        return self.linear(h)
     
 
 
@@ -167,6 +198,10 @@ class SPiRLRadSacAgent(RadSacAgent):
         # SPiRL specific parameters below
         spirl_latent_dim=10,
         spirl_encoder_type="pixel",
+        spirl_closed_loop=False,
+        use_film=False,
+        spirl_architecture="rnn",
+        spirl_beta = 0.1,
     ):
         torch.backends.cudnn.benchmark = True
         self.device = device
@@ -284,11 +319,16 @@ class SPiRLRadSacAgent(RadSacAgent):
         # SPiRL specific stuff
         self.spirl_num_skills = discrete_action_dim
         self.spirl_latent_dim = spirl_latent_dim
+        self.use_film = use_film
+        self.spirl_closed_loop = spirl_closed_loop
+        self.model_type = spirl_architecture
+        self.spirl_beta = spirl_beta
         self.spirl_encoder = ActionEncoder(
             env_action_dim,
             hidden_dim,
             spirl_latent_dim,
             num_layers=1,  # just one processing layer is fine
+            model_type=spirl_architecture,
         )
         self.spirl_prior = ObsPrior(
             spirl_latent_dim,
@@ -299,7 +339,20 @@ class SPiRLRadSacAgent(RadSacAgent):
             num_layers,
             num_filters,
         )
-
+        self.spirl_decoder = ActionDecoder(
+            spirl_latent_dim,
+            hidden_dim,
+            env_action_dim,
+            num_layers=1,
+            closed_loop=spirl_closed_loop,
+            cl_encoder=self.spirl_prior.encoder,
+            model_type=spirl_architecture
+        )
+        self.spirl_optimizer = torch.optim.Adam(
+            list(self.spirl_encoder.parameters()) + list(self.spirl_prior.parameters()) + list(self.spirl_decoder.parameters()),
+            lr=encoder_lr,
+        )
+        self.kl_div_loss = nn.KLDivLoss(reduction="batchmean")
 
     def train(self, training=True):
         self.training = training
@@ -309,6 +362,7 @@ class SPiRLRadSacAgent(RadSacAgent):
             self.CURL.train(training)
 
     def select_action(self, obs):
+        # TODO: SPiRL integration
         with torch.no_grad():
             obs = torch.FloatTensor(obs).to(self.device)
             obs = obs.unsqueeze(0)
@@ -316,6 +370,7 @@ class SPiRLRadSacAgent(RadSacAgent):
             return mu.cpu().data.numpy().flatten()
 
     def sample_action(self, obs):
+        # TODO: SPiRL integration
         if obs.shape[-1] != self.image_size:
             obs = utils.center_crop_image(obs, self.image_size)
 
@@ -324,86 +379,6 @@ class SPiRLRadSacAgent(RadSacAgent):
             obs = obs.unsqueeze(0)
             mu, pi, _, _ = self.actor(obs, compute_log_pi=False)
             return pi.cpu().data.numpy().flatten()
-
-    def update_critic(self, obs, action, reward, next_obs, not_done, L, step):
-        with torch.no_grad():
-            _, policy_action, log_pi, _ = self.actor(next_obs)
-            target_Q1, target_Q2 = self.critic_target(next_obs, policy_action)
-            target_V = torch.min(target_Q1, target_Q2) - self.alpha.detach() * log_pi
-            target_Q = reward + (not_done * self.discount * target_V)
-
-        # get current Q estimates
-        current_Q1, current_Q2 = self.critic(
-            obs, action, detach_encoder=self.detach_encoder
-        )
-        critic_loss = F.mse_loss(current_Q1, target_Q) + F.mse_loss(
-            current_Q2, target_Q
-        )
-        if step % self.log_interval == 0:
-            L.log("train_critic/loss", critic_loss, step)
-
-        # Optimize the critic
-        self.critic_optimizer.zero_grad()
-        critic_loss.backward()
-        self.critic_optimizer.step()
-
-        self.critic.log(L, step)
-
-    def update_actor_and_alpha(self, obs, L, step):
-        # detach encoder, so we don't update it with the actor loss
-        _, pi, log_pi, log_std = self.actor(obs, detach_encoder=True)
-        actor_Q1, actor_Q2 = self.critic(obs, pi, detach_encoder=True)
-
-        actor_Q = torch.min(actor_Q1, actor_Q2)
-        actor_loss = (self.alpha.detach() * log_pi - actor_Q).mean()
-
-        if step % self.log_interval == 0:
-            L.log("train_actor/loss", actor_loss, step)
-            L.log("train_actor/target_entropy", self.target_entropy, step)
-        entropy = 0.5 * log_std.shape[1] * (1.0 + np.log(2 * np.pi)) + log_std.sum(
-            dim=-1
-        )
-        if step % self.log_interval == 0:
-            L.log("train_actor/entropy", entropy.mean(), step)
-
-        # optimize the actor
-        self.actor_optimizer.zero_grad()
-        actor_loss.backward()
-        self.actor_optimizer.step()
-
-        self.actor.log(L, step)
-
-        self.log_alpha_optimizer.zero_grad()
-        alpha_loss = (self.alpha * (-log_pi - self.target_entropy).detach()).mean()
-        if step % self.log_interval == 0:
-            L.log("train_alpha/loss", alpha_loss, step)
-            L.log("train_alpha/value", self.alpha, step)
-        alpha_loss.backward()
-        self.log_alpha_optimizer.step()
-
-    def update_cpc(self, obs_anchor, obs_pos, cpc_kwargs, L, step):
-        # time flips
-        """
-        time_pos = cpc_kwargs["time_pos"]
-        time_anchor= cpc_kwargs["time_anchor"]
-        obs_anchor = torch.cat((obs_anchor, time_anchor), 0)
-        obs_pos = torch.cat((obs_anchor, time_pos), 0)
-        """
-        z_a = self.CURL.encode(obs_anchor)
-        z_pos = self.CURL.encode(obs_pos, ema=True)
-
-        logits = self.CURL.compute_logits(z_a, z_pos)
-        labels = torch.arange(logits.shape[0]).long().to(self.device)
-        loss = self.cross_entropy_loss(logits, labels)
-
-        self.encoder_optimizer.zero_grad()
-        self.cpc_optimizer.zero_grad()
-        loss.backward()
-
-        self.encoder_optimizer.step()
-        self.cpc_optimizer.step()
-        if step % self.log_interval == 0:
-            L.log("train/curl_loss", loss, step)
 
     def update(self, replay_buffer, L, step):
         if self.encoder_type == "pixel":
@@ -436,13 +411,20 @@ class SPiRLRadSacAgent(RadSacAgent):
         #    obs_anchor, obs_pos = cpc_kwargs["obs_anchor"], cpc_kwargs["obs_pos"]
         #    self.update_cpc(obs_anchor, obs_pos,cpc_kwargs, L, step)
 
-    def save(self, model_dir, step):
-        torch.save(self.actor.state_dict(), "%s/actor_%s.pt" % (model_dir, step))
-        torch.save(self.critic.state_dict(), "%s/critic_%s.pt" % (model_dir, step))
+
 
     def save_curl(self, model_dir, step):
         torch.save(self.CURL.state_dict(), "%s/curl_%s.pt" % (model_dir, step))
 
+
     def load(self, model_dir, step):
         self.actor.load_state_dict(torch.load("%s/actor_%s.pt" % (model_dir, step)))
         self.critic.load_state_dict(torch.load("%s/critic_%s.pt" % (model_dir, step)))
+
+    def save(self, model_dir, step):
+        torch.save(self.actor.state_dict(), "%s/actor_%s.pt" % (model_dir, step))
+        torch.save(self.critic.state_dict(), "%s/critic_%s.pt" % (model_dir, step))
+        torch.save(
+            self.critic_target.state_dict(),
+            "%s/critic_target_%s.pt" % (model_dir, step),
+        )
