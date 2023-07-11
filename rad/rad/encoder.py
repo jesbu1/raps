@@ -17,7 +17,14 @@ class PixelEncoder(nn.Module):
     """Convolutional encoder of pixels observations."""
 
     def __init__(
-        self, obs_shape, feature_dim, num_layers=2, num_filters=32, output_logits=False
+        self,
+        obs_shape,
+        feature_dim,
+        num_layers=2,
+        num_filters=32,
+        output_logits=False,
+        film=False,
+        film_input_dim=None,
     ):
         super().__init__()
 
@@ -27,8 +34,16 @@ class PixelEncoder(nn.Module):
         self.num_layers = num_layers
         # try 2 5x5s with strides 2x2. with samep adding, it should reduce 84 to 21, so with valid, it should be even smaller than 21.
         self.convs = nn.ModuleList([nn.Conv2d(obs_shape[0], num_filters, 3, stride=2)])
+
+        self.film_layers = []
+        self.film = film
+        if film:
+            assert film_input_dim is not None
+            self.film_layers.append(nn.Linear(film_input_dim, num_filters * 2))
         for i in range(num_layers - 1):
             self.convs.append(nn.Conv2d(num_filters, num_filters, 3, stride=1))
+            if film:
+                self.film_layers.append(nn.Linear(film_input_dim, num_filters * 2))
 
         if obs_shape[-1] == 108:
             assert num_layers in OUT_DIM_108
@@ -49,24 +64,33 @@ class PixelEncoder(nn.Module):
         eps = torch.randn_like(std)
         return mu + eps * std
 
-    def forward_conv(self, obs):
+    def forward_conv(self, obs, film_input):
         if obs.max() > 1.0:
             obs = obs / 255.0
 
         self.outputs["obs"] = obs
 
         conv = torch.relu(self.convs[0](obs))
+        if self.film:
+            film_params = self.film_layers[0](film_input)
+            film_params = film_params.view(-1, 2, 1, 1)
+            conv = conv * film_params[:, 0] + film_params[:, 1]
         self.outputs["conv1"] = conv
 
         for i in range(1, self.num_layers):
-            conv = torch.relu(self.convs[i](conv))
+            conv = self.convs[i](conv)
+            if self.film:
+                film_params = self.film_layers[i](film_input)
+                film_params = film_params.view(-1, 2, 1, 1)
+                conv = conv * film_params[:, 0] + film_params[:, 1]
+            conv = torch.relu(conv)
             self.outputs["conv%s" % (i + 1)] = conv
 
         h = conv.view(conv.size(0), -1)
         return h
 
-    def forward(self, obs, detach=False):
-        h = self.forward_conv(obs)
+    def forward(self, obs, detach=False, film_input=None):
+        h = self.forward_conv(obs, film_input)
 
         if detach:
             h = h.detach()
@@ -113,7 +137,7 @@ class IdentityEncoder(nn.Module):
         assert len(obs_shape) == 1
         self.feature_dim = obs_shape[0]
 
-    def forward(self, obs, detach=False):
+    def forward(self, obs, detach=False, film_input=None):
         return obs
 
     def copy_conv_weights_from(self, source):
