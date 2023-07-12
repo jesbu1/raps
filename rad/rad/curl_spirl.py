@@ -6,6 +6,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from rlkit.torch.torch_17_distributions.one_hot_categorical import OneHotCategorical
+from torch.distributions import Normal
 
 from rad.curl_sac import OneHotDist, Actor, QFunction, Critic, CURL, RadSacAgent
 
@@ -41,12 +42,14 @@ class ObsPrior(nn.Module):
         )
         self.linear = nn.Sequential(
             *[nn.Linear(obs_encoder_output_dim, obs_encoder_output_dim), nn.ReLU() for _ in range(num_linear_layers - 1)],
-            nn.Linear(obs_encoder_output_dim, output_dim),
+            nn.Linear(obs_encoder_output_dim, output_dim * 2),
         )
 
     def forward(self, obs, one_hot=None):
         h = self.encoder(obs, film_input=one_hot)
-        return self.linear(h)
+        mu, log_sigma = self.linear(h).chunk(2, dim=-1)
+        return mu, log_sigma
+
 
 class ActionEncoder(nn.Module):
     def __init__(
@@ -195,6 +198,7 @@ class SPiRLRadSacAgent(RadSacAgent):
         detach_encoder=False,
         latent_dim=128,
         data_augs="",
+        use_amp=False,
         # SPiRL specific parameters below
         spirl_latent_dim=10,
         spirl_encoder_type="pixel",
@@ -352,7 +356,8 @@ class SPiRLRadSacAgent(RadSacAgent):
             list(self.spirl_encoder.parameters()) + list(self.spirl_prior.parameters()) + list(self.spirl_decoder.parameters()),
             lr=encoder_lr,
         )
-        self.kl_div_loss = nn.KLDivLoss(reduction="batchmean")
+        self.use_amp = use_amp
+        self.grad_scaler = torch.cuda.amp.GradScaler(enabled=self.use_amp)
 
     def train(self, training=True):
         self.training = training
@@ -360,6 +365,53 @@ class SPiRLRadSacAgent(RadSacAgent):
         self.critic.train(training)
         if self.encoder_type == "pixel":
             self.CURL.train(training)
+
+    def train_spirl(self, training=True):
+        self.spirl_encoder.train(training)
+        self.spirl_prior.train(training)
+        self.spirl_decoder.train(training)
+
+    def spirl_update(self, replay_buffer, L, step):
+        # TODO: integrate a multi-skill spirl version (not yet) as I need to first test straightforward spirl
+        with torch.cuda.amp.autocast(enabled=self.use_amp):
+            obs, actions, _, _ = replay_buffer.sample_spirl_trajs()
+            # skill_labels is a one_hot vector
+
+            # compute prior
+            prior_mu, prior_log_std = self.spirl_prior(obs)
+
+            # compute posterior
+            posterior_mu, posterior_log_std = self.spirl_encoder(actions)
+
+            # compute kl divergence for the prior
+            kl_div_prior = utils.gaussian_kl_divergence(posterior_mu.detach(), posterior_log_std.detach(), prior_mu, prior_log_std)
+
+            # compute KL divergence for the encoder 
+            gaussian_mu = torch.zeros_like(posterior_mu)
+            gaussian_log_std = torch.zeros_like(posterior_log_std)
+            kl_div_encoder = utils.gaussian_kl_divergence(posterior_mu, posterior_log_std, gaussian_mu, gaussian_log_std)
+
+            # sample from posterior gaussian
+            z = Normal(posterior_mu, posterior_log_std.exp()).rsample()
+
+            # compute reconstruction loss
+            recon = self.spirl_decoder(z, obs)
+            recon_loss = F.mse_loss(recon, actions)
+
+            # compute total loss
+            loss = self.spirl_beta * kl_div_encoder + recon_loss + kl_div_prior
+
+            # update
+            self.spirl_optimizer.zero_grad()
+            loss.backward()
+            self.grad_scaler.step(self.spirl_optimizer)
+            self.grad_scaler.update()
+
+            if step % self.log_interval == 0:
+                L.log("spirl_train/recon_loss", recon_loss.item(), step)
+                L.log("spirl_train/kl_div_prior", kl_div_prior.item(), step)
+                L.log("spirl_train/kl_div_encoder", kl_div_encoder.item(), step)
+
 
     def select_action(self, obs):
         # TODO: SPiRL integration
@@ -411,8 +463,6 @@ class SPiRLRadSacAgent(RadSacAgent):
         #    obs_anchor, obs_pos = cpc_kwargs["obs_anchor"], cpc_kwargs["obs_pos"]
         #    self.update_cpc(obs_anchor, obs_pos,cpc_kwargs, L, step)
 
-
-
     def save_curl(self, model_dir, step):
         torch.save(self.CURL.state_dict(), "%s/curl_%s.pt" % (model_dir, step))
 
@@ -428,3 +478,15 @@ class SPiRLRadSacAgent(RadSacAgent):
             self.critic_target.state_dict(),
             "%s/critic_target_%s.pt" % (model_dir, step),
         )
+
+    def save_spirl(self, model_dir, step):
+        torch.save(self.spirl_encoder.state_dict(), "%s/spirl_encoder_%s.pt" % (model_dir, step))
+        torch.save(self.spirl_prior.state_dict(), "%s/spirl_prior_%s.pt" % (model_dir, step))
+        torch.save(self.spirl_decoder.state_dict(), "%s/spirl_decoder_%s.pt" % (model_dir, step))
+        torch.save(self.spirl_optimizer.state_dict(), "%s/spirl_optimizer_%s.pt" % (model_dir, step))
+
+    def load_spirl(self, model_dir, step):
+        self.spirl_encoder.load_state_dict(torch.load("%s/spirl_encoder_%s.pt" % (model_dir, step)))
+        self.spirl_prior.load_state_dict(torch.load("%s/spirl_prior_%s.pt" % (model_dir, step)))
+        self.spirl_decoder.load_state_dict(torch.load("%s/spirl_decoder_%s.pt" % (model_dir, step)))
+        self.spirl_optimizer.load_state_dict(torch.load("%s/spirl_optimizer_%s.pt" % (model_dir, step)))

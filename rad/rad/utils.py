@@ -8,6 +8,7 @@ import random
 from torch.utils.data import Dataset, DataLoader
 import time
 from skimage.util.shape import view_as_windows
+from rlkit.data_management.simple_replay_buffer import SimpleReplayBuffer
 
 
 class eval_mode(object):
@@ -56,7 +57,7 @@ def make_dir(dir_path):
 
 def preprocess_obs(obs, bits=5):
     """Preprocessing image, see https://arxiv.org/abs/1807.03039."""
-    bins = 2 ** bits
+    bins = 2**bits
     assert obs.dtype == torch.float32
     if bits < 8:
         obs = torch.floor(obs / 2 ** (8 - bits))
@@ -100,7 +101,6 @@ class ReplayBuffer(Dataset):
         self.full = False
 
     def add(self, obs, action, reward, next_obs, done):
-
         np.copyto(self.obses[self.idx], obs)
         np.copyto(self.actions[self.idx], action)
         np.copyto(self.rewards[self.idx], reward)
@@ -111,7 +111,6 @@ class ReplayBuffer(Dataset):
         self.full = self.full or self.idx == 0
 
     def sample_proprio(self):
-
         idxs = np.random.randint(
             0, self.capacity if self.full else self.idx, size=self.batch_size
         )
@@ -127,7 +126,6 @@ class ReplayBuffer(Dataset):
         return obses, actions, rewards, next_obses, not_dones
 
     def sample_cpc(self):
-
         start = time.time()
         idxs = np.random.randint(
             0, self.capacity if self.full else self.idx, size=self.batch_size
@@ -155,7 +153,6 @@ class ReplayBuffer(Dataset):
         return obses, actions, rewards, next_obses, not_dones, cpc_kwargs
 
     def sample_rad(self, aug_funcs):
-
         # augs specified as flags
         # curl_sac organizes flags into aug funcs
         # passes aug funcs into sampler
@@ -248,6 +245,118 @@ class ReplayBuffer(Dataset):
         return self.capacity
 
 
+class OfflineEpisodeReplayBuffer(SimpleReplayBuffer):
+    def __init__(
+        self,
+        max_replay_buffer_size,
+        env,
+        max_path_length,
+        observation_dim,
+        action_dim,
+        replace=True,
+        batch_length=50,
+        use_batch_length=False,
+    ):
+        self.env = env
+        self._ob_space = env.observation_space
+        self._action_space = env.action_space
+
+        self._observation_dim = get_dim(self._ob_space)
+        self._action_dim = get_dim(self._action_space)
+        self.max_path_length = max_path_length
+        self._max_replay_buffer_size = max_replay_buffer_size
+        self._observations = np.zeros(
+            (max_replay_buffer_size, max_path_length, observation_dim),
+            dtype=np.uint8,
+        )
+        self._actions = np.zeros((max_replay_buffer_size, max_path_length, action_dim))
+        self._rewards = np.zeros((max_replay_buffer_size, max_path_length, 1))
+        self._terminals = np.zeros(
+            (max_replay_buffer_size, max_path_length, 1), dtype="uint8"
+        )
+        self._replace = replace
+        self.batch_length = batch_length
+        self.use_batch_length = use_batch_length
+        self._top = 0
+        self._size = 0
+
+    def add_path(self, path):
+        self._observations[self._top : self._top + self.env.n_envs] = path[
+            "observations"
+        ].transpose(1, 0, 2)
+        self._actions[self._top : self._top + self.env.n_envs] = path[
+            "actions"
+        ].transpose(1, 0, 2)
+        self._rewards[self._top : self._top + self.env.n_envs] = np.expand_dims(
+            path["rewards"].transpose(1, 0), -1
+        )
+        self._terminals[self._top : self._top + self.env.n_envs] = np.expand_dims(
+            path["terminals"].transpose(1, 0), -1
+        )
+
+        self._advance()
+
+    def _advance(self):
+        self._top = (self._top + self.env.n_envs) % self._max_replay_buffer_size
+        if self._size < self._max_replay_buffer_size:
+            self._size += self.env.n_envs
+
+    def random_batch(self, batch_size):
+        if self.use_batch_length:
+            indices = np.random.choice(
+                self._size,
+                size=batch_size,
+                replace=True,
+            )
+            if not self._replace and self._size < batch_size:
+                warnings.warn(
+                    "Replace was set to false, but is temporarily set to true because batch size is larger than current size of replay."
+                )
+            batch_start = np.random.randint(
+                0, self.max_path_length - self.batch_length, size=(batch_size)
+            )
+            batch_indices = np.linspace(
+                batch_start,
+                batch_start + self.batch_length,
+                self.batch_length,
+                endpoint=False,
+            ).astype(int)
+
+            observations = self._observations[indices][
+                np.arange(batch_size), batch_indices
+            ].transpose(1, 0, 2)
+            actions = self._actions[indices][
+                np.arange(batch_size), batch_indices
+            ].transpose(1, 0, 2)
+            rewards = self._rewards[indices][
+                np.arange(batch_size), batch_indices
+            ].transpose(1, 0, 2)
+            terminals = self._terminals[indices][
+                np.arange(batch_size), batch_indices
+            ].transpose(1, 0, 2)
+        else:
+            indices = np.random.choice(
+                self._size,
+                size=batch_size,
+                replace=self._replace or self._size < batch_size,
+            )
+            if not self._replace and self._size < batch_size:
+                warnings.warn(
+                    "Replace was set to false, but is temporarily set to true because batch size is larger than current size of replay."
+                )
+            observations = self._observations[indices]
+            actions = self._actions[indices]
+            rewards = self._rewards[indices]
+            terminals = self._terminals[indices]
+        batch = dict(
+            observations=observations,
+            actions=actions,
+            rewards=rewards,
+            terminals=terminals,
+        )
+        return batch
+
+
 class FrameStack(gym.Wrapper):
     def __init__(self, env, k):
         gym.Wrapper.__init__(self, env)
@@ -308,3 +417,16 @@ def center_translate(image, size):
     w1 = (size - w) // 2
     outs[:, h1 : h1 + h, w1 : w1 + w] = image
     return outs
+
+
+def gaussian_kl_divergence(q_mu, q_logsigma, p_mu, p_logsigma):
+    # KL(q, p) where q, p are both Gaussians
+    # q_mu, q_logsigma: mean and log std of q
+    # p_mu, p_logsigma: same for p
+    return (
+        p_logsigma
+        - q_logsigma
+        + (torch.exp(q_logsigma) ** 2 + (q_mu - p_mu) ** 2)
+        / (2 * torch.exp(p_logsigma) ** 2)
+        - 0.5
+    )
