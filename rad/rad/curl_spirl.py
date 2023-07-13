@@ -374,8 +374,7 @@ class SPiRLRadSacAgent(RadSacAgent):
     def spirl_update(self, replay_buffer, L, step):
         # TODO: integrate a multi-skill spirl version (not yet) as I need to first test straightforward spirl
         with torch.cuda.amp.autocast(enabled=self.use_amp):
-            obs, actions, _, _ = replay_buffer.sample_spirl_trajs()
-            # skill_labels is a one_hot vector
+            obs, actions = replay_buffer.sample_spirl_trajs()
 
             # compute prior
             prior_mu, prior_log_std = self.spirl_prior(obs)
@@ -411,6 +410,11 @@ class SPiRLRadSacAgent(RadSacAgent):
                 L.log("spirl_train/recon_loss", recon_loss.item(), step)
                 L.log("spirl_train/kl_div_prior", kl_div_prior.item(), step)
                 L.log("spirl_train/kl_div_encoder", kl_div_encoder.item(), step)
+                # log reconstruction loss with spirl prior
+                with torch.no_grad():
+                    prior_recon = self.spirl_decoder(prior_mu, obs)
+                    prior_recon_loss = F.mse_loss(prior_recon, actions)
+                L.log("spirl_train/prior_recon_loss", prior_recon_loss.item(), step)
 
 
     def select_action(self, obs):
