@@ -249,13 +249,11 @@ class ReplayBuffer(Dataset):
 class D4RLSequenceSplitDataset(Dataset):
     def __init__(
         self,
-        data_dir,
         batch_size,
         device,
         d4rl_dataset,
         skill_len=10,
     ):
-        self.data_dir = data_dir
         self.subseq_len = skill_len
         self.device = device
         self.batch_size = batch_size
