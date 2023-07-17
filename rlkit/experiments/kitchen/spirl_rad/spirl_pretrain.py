@@ -14,41 +14,73 @@ def experiment(variant):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--exp_prefix", type=str, default="test")
+    # misc
+    parser.add_argument("--exp_prefix", type=str, required=True)
+    parser.add_argument("--run_group", type=str, required=True)
     parser.add_argument("--num_seeds", type=int, default=1)
     parser.add_argument("--mode", type=str, default="local")
-    parser.add_argument("--env", type=str, default="")
+    parser.add_argument("--env", type=str, default="kitchen-mixed-v0")
+    # train
+    parser.add_argument("--agent", default="rad_sac", type=str)
+    parser.add_argument("--hidden_dim", default=128, type=int)
+    # critic
+    parser.add_argument("--critic_beta", default=0.9, type=float)
+    parser.add_argument("--critic_tau", default=0.01, type=float)  # try 0.05 or 0.1
+    parser.add_argument(
+        "--critic_target_update_freq", default=2, type=int
+    )  # try to change it to 1 and retain 0.01 above
+    # actor
+    parser.add_argument("--actor_beta", default=0.9, type=float)
+    parser.add_argument("--actor_log_std_min", default=-10, type=float)
+    parser.add_argument("--actor_log_std_max", default=2, type=float)
+    parser.add_argument("--actor_update_freq", default=2, type=int)
+    parser.add_argument("--discrete_continuous_dist", default=0, type=int)
+    # encoder
+    parser.add_argument("--encoder_feature_dim", default=50, type=int)
+    parser.add_argument("--encoder_tau", default=0.05, type=float)
+    parser.add_argument("--num_layers", default=4, type=int)
+    parser.add_argument("--num_filters", default=32, type=int)
+    parser.add_argument("--latent_dim", default=128, type=int)
+    # sac
+    parser.add_argument("--init_temperature", default=0.1, type=float)
+    parser.add_argument("--alpha_lr", default=1e-4, type=float)
+    parser.add_argument("--alpha_beta", default=0.5, type=float)
+    parser.add_argument("--detach_encoder", default=False, action="store_true")
+    # spirl
+    parser.add_argument("--spirl_latent_dim", default=10, type=int)
+    parser.add_argument("--spirl_encoder_type", default="identity", type=str)
+    parser.add_argument("--spirl_closed_loop", default=False, action="store_true")
+    parser.add_argument("--spirl_architecture", default="rnn", type=str)
+    parser.add_argument("--use_film", default=False, action="store_true")
+    parser.add_argument("--spirl_beta", default=5e-4, type=float)
+
     args = parser.parse_args()
+
     exp_prefix = args.exp_prefix
     variant = dict(
+        run_group=args.run_group,
         agent_kwargs=dict(
             discount=0.99,
             critic_lr=2e-4,
             actor_lr=2e-4,
             encoder_lr=2e-4,
             encoder_type="identity",
-            discrete_continuous_dist=True,
             data_augs="no_aug",
             use_amp=True,
-            spirl_latent_dim=10,
-            spirl_encoder_type="identity",
-            spirl_closed_loop=False,
-            use_film=False,
-            spirl_architecture="rnn",
-            spirl_beta=5e-4,
-            spirl_skill_len=10,
-            log_interval=100,
-            env_action_dim=7,
+            log_interval=50,
+            env_action_dim=9,
+            **vars(args),
         ),
-        num_train_epochs=10,
+        num_train_epochs=10000,
         frame_stack=1,
+        spirl_skill_len=10,  # for the dataset
         # replay_buffer_capacity=int(2.5e6),
         # action_repeat=1,
         num_eval_episodes=5,
         # init_steps=2500,
         # pre_transform_image_size=64,
         # image_size=64,
-        env_name="kitchen-mixed-v0",  # slide-cabinet
+        env_name=None,  # will be replaced by the arg # slide-cabinet
         batch_size=128,  # 512 originally for online RL
         # eval_freq=1000,
         # log_interval=1000,

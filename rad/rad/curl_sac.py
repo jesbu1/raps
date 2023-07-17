@@ -310,7 +310,7 @@ class CURL(nn.Module):
         return logits
 
 
-class RadSacAgent(object):
+class RadSacAgent(nn.Module):
     """RAD with SAC."""
 
     def __init__(
@@ -346,6 +346,7 @@ class RadSacAgent(object):
         latent_dim=128,
         data_augs="",
     ):
+        super().__init__()
         torch.backends.cudnn.benchmark = True
         self.device = device
         self.discount = discount

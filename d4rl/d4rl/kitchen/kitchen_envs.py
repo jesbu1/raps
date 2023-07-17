@@ -1,6 +1,7 @@
 """Environments using kitchen and Franka robot."""
 import numpy as np
 from d4rl.kitchen.adept_envs.franka.kitchen_multitask_v0 import KitchenTaskRelaxV1
+from d4rl.offline_env import OfflineEnv
 
 OBS_ELEMENT_INDICES = {
     "bottom left burner": np.array([11, 12]),
@@ -23,7 +24,8 @@ OBS_ELEMENT_GOALS = {
 BONUS_THRESH = 0.3
 
 
-class KitchenBase(KitchenTaskRelaxV1):
+class KitchenBase(KitchenTaskRelaxV1, OfflineEnv):
+    # class KitchenBase(KitchenTaskRelaxV1):
     # A string of element names. The robot's task is then to modify each of
     # these elements appropriately.
     TASK_ELEMENTS = []
@@ -33,6 +35,23 @@ class KitchenBase(KitchenTaskRelaxV1):
     def __init__(self, dense=True, **kwargs):
         self.tasks_to_complete = set(self.TASK_ELEMENTS)
         self.dense = dense
+        if (  # we called a gym.make which is used for training SPiRL
+            "dataset_url" in kwargs
+            and "ref_max_score" in kwargs
+            and "ref_min_score" in kwargs
+        ):
+            dataset_url, ref_max_score, ref_min_score = (
+                kwargs.pop("dataset_url"),
+                kwargs.pop("ref_max_score"),
+                kwargs.pop("ref_min_score"),
+            )
+            OfflineEnv.__init__(
+                self,
+                dataset_url=dataset_url,
+                ref_max_score=ref_max_score,
+                ref_min_score=ref_min_score,
+            )
+            kwargs["control_mode"] = "joint_velocity"  # default d4rl param
         super(KitchenBase, self).__init__(**kwargs)
 
     def _get_obs(self):
@@ -252,3 +271,12 @@ class KitchenHingeCabinetV0(KitchenBase):
 
 class KitchenLightSwitchV0(KitchenBase):
     TASK_ELEMENTS = ["light switch"]
+
+
+# original D4RL envs below
+class KitchenMicrowaveKettleLightSliderV0(KitchenBase):
+    TASK_ELEMENTS = ["microwave", "kettle", "light switch", "slide cabinet"]
+
+
+class KitchenMicrowaveKettleBottomBurnerLightV0(KitchenBase):
+    TASK_ELEMENTS = ["microwave", "kettle", "bottom left burner", "light switch"]

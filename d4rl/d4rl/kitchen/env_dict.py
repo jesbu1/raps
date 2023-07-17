@@ -7,6 +7,8 @@ from d4rl.kitchen.kitchen_envs import (
     KitchenMicrowaveV0,
     KitchenSlideCabinetV0,
     KitchenTopLeftBurnerV0,
+    KitchenMicrowaveKettleLightSliderV0,
+    KitchenMicrowaveKettleBottomBurnerLightV0,
 )
 
 ALL_KITCHEN_ENVIRONMENTS = {
