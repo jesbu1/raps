@@ -1,0 +1,106 @@
+import argparse
+import random
+import subprocess
+
+import rlkit.util.hyperparameter as hyp
+from rlkit.launchers.launcher_util import run_experiment
+
+
+def experiment(variant):
+    from rad.kitchen_spirl_pretrain import experiment
+
+    experiment(variant)
+
+
+if __name__ == "__main__":
+    # TODO: Fill this out
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--exp_prefix", type=str, default="test")
+    parser.add_argument("--num_seeds", type=int, default=1)
+    parser.add_argument("--mode", type=str, default="local")
+    parser.add_argument("--env", type=str, default="")
+    args = parser.parse_args()
+    exp_prefix = args.exp_prefix
+    variant = dict(
+        agent_kwargs=dict(
+            discount=0.99,
+            critic_lr=2e-4,
+            actor_lr=2e-4,
+            encoder_lr=2e-4,
+            encoder_type="identity",
+            discrete_continuous_dist=True,
+            data_augs="no_aug",
+            use_amp=True,
+            spirl_latent_dim=10,
+            spirl_encoder_type="identity",
+            spirl_closed_loop=False,
+            use_film=False,
+            spirl_architecture="rnn",
+            spirl_beta=5e-4,
+            spirl_skill_len=10,
+            log_interval=100,
+            env_action_dim=7,
+        ),
+        num_train_epochs=10,
+        frame_stack=1,
+        # replay_buffer_capacity=int(2.5e6),
+        # action_repeat=1,
+        num_eval_episodes=5,
+        # init_steps=2500,
+        # pre_transform_image_size=64,
+        # image_size=64,
+        env_name="kitchen-mixed-v0",  # slide-cabinet
+        batch_size=128,  # 512 originally for online RL
+        # eval_freq=1000,
+        # log_interval=1000,
+        # env_kwargs=dict(
+        #    dense=False,
+        #    image_obs=True,
+        #    action_scale=1,
+        #    control_mode="end_effector",
+        #    frame_skip=40,
+        #    imwidth=84,
+        #    imheight=84,
+        #    usage_kwargs=dict(
+        #        use_dm_backend=True,
+        #        use_raw_action_wrappers=False,
+        #        use_image_obs=True,
+        #        max_path_length=280,
+        #        unflatten_images=True,
+        #    ),
+        #    image_kwargs=dict(),
+        # ),
+        seed=-1,
+        # use_raw_actions=True,
+        env_suite="kitchen",
+    )
+
+    search_space = {
+        "agent_kwargs.data_augs": [
+            "no_aug",
+        ],
+        "agent_kwargs.discrete_continuous_dist": [False],
+        "env_name": [args.env],
+    }
+    sweeper = hyp.DeterministicHyperparameterSweeper(
+        search_space,
+        default_parameters=variant,
+    )
+    for exp_id, variant in enumerate(sweeper.iterate_hyperparameters()):
+        for _ in range(args.num_seeds):
+            seed = random.randint(0, 100000)
+            variant["seed"] = seed
+            variant["exp_id"] = exp_id
+            run_experiment(
+                experiment,
+                exp_prefix=args.exp_prefix,
+                mode=args.mode,
+                variant=variant,
+                use_gpu=True,
+                snapshot_mode="none",
+                python_cmd=subprocess.check_output("which python", shell=True).decode(
+                    "utf-8"
+                )[:-1],
+                seed=seed,
+                exp_id=exp_id,
+            )

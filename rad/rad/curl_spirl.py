@@ -119,7 +119,6 @@ class ActionDecoder(nn.Module):
             self.obs_input_size = cl_encoder.feature_dim
         else:
             self.obs_input_size = 0
-
         if model_type == "rnn":
             self.model = nn.GRU(
                 latent_dim + self.obs_input_size,
@@ -157,6 +156,45 @@ class ActionDecoder(nn.Module):
         h = self.norm(h)
         h = self.nonlinearity(h)
         return self.linear(h)
+    
+class ClosedLoopActionDecoder(nn.Module):
+    # this will be an Action Decoder MLP
+    def __init__(
+        self, 
+        latent_dim,
+        hidden_dim,
+        output_dim,
+        n_layers,
+        cl_encoder,
+        ):
+        super().__init__()
+        self.cl_encoder = cl_encoder
+        self.obs_input_size = cl_encoder.feature_dim
+
+        if model_type == "rnn":
+            self.model = nn.GRU(
+                latent_dim + self.obs_input_size,
+                hidden_dim,
+                n_layers,
+                batch_first=True,
+            )
+        elif model_type == "transformer":
+            self.model = nn.TransformerEncoder(
+                nn.TransformerEncoderLayer(
+                    d_model=latent_dim,
+                    nhead=4,
+                    dim_feedforward=hidden_dim,
+                    dropout=0.0,
+                ),
+                n_layers,
+            )
+        self.norm = nn.LayerNorm(hidden_dim)
+        self.nonlinearity = nn.ReLU()
+        self.linear = nn.Linear(hidden_dim, output_dim)
+        self.model_type = model_type
+        self.closed_loop = closed_loop
+        self.cl_encoder = cl_encoder
+
     
 
 
@@ -358,6 +396,7 @@ class SPiRLRadSacAgent(RadSacAgent):
         )
         self.use_amp = use_amp
         self.grad_scaler = torch.cuda.amp.GradScaler(enabled=self.use_amp)
+        self.spirl_action_horizon = 10
 
     def train(self, training=True):
         self.training = training
@@ -416,9 +455,15 @@ class SPiRLRadSacAgent(RadSacAgent):
                     prior_recon_loss = F.mse_loss(prior_recon, actions)
                 L.log("spirl_train/prior_recon_loss", prior_recon_loss.item(), step)
 
+    def reset(self):
+        # reset all of the online RL stuff
+        self.current_action_trajs = []
+
 
     def select_action(self, obs):
         # TODO: SPiRL integration
+        if self.spirl_closed_loop:
+            self.spirl_decoder()
         with torch.no_grad():
             obs = torch.FloatTensor(obs).to(self.device)
             obs = obs.unsqueeze(0)
