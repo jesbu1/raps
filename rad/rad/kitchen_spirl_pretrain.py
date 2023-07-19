@@ -1,11 +1,8 @@
-import argparse
 from collections import defaultdict
 from tqdm import trange
 import wandb
 
 # import dmc2gym
-import copy
-import json
 import os
 import time
 from collections import OrderedDict
@@ -71,7 +68,7 @@ def experiment(variant):
     frame_stack = variant["frame_stack"]
     batch_size = variant["batch_size"]
     num_train_epochs = variant["num_train_epochs"]  # new arg
-    spirl_skill_len = variant["spirl_skill_len"]
+    spirl_skill_len = variant["agent_kwargs"]["spirl_action_horizon"]
     run_group = variant["run_group"]
     # replay_buffer_capacity = variant["replay_buffer_capacity"]
     # num_train_steps = variant["num_train_steps"]
@@ -105,7 +102,8 @@ def experiment(variant):
     ts = time.strftime("%m-%d", ts)
     env_name = env_name
     exp_name = (
-        env_name
+        "SPiRL-pretrain-"
+        + env_name
         + "-"
         + ts
         + "-im"

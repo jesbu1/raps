@@ -13,7 +13,9 @@ def experiment(variant):
 
 
 if __name__ == "__main__":
+    # TODO: Fill this out
     parser = argparse.ArgumentParser()
+    parser.add_argument("--ckpt_load_dir", type=str, required=True)
     # misc
     parser.add_argument("--exp_prefix", type=str, required=True)
     parser.add_argument("--run_group", type=str, required=True)
@@ -54,10 +56,7 @@ if __name__ == "__main__":
     parser.add_argument("--use_film", default=False, action="store_true")
     parser.add_argument("--spirl_beta", default=5e-4, type=float)
     parser.add_argument("--spirl_action_horizon", default=10, type=int)
-
     args = parser.parse_args()
-
-    exp_prefix = args.exp_prefix
     variant = dict(
         run_group=args.run_group,
         agent_kwargs=dict(
@@ -70,39 +69,41 @@ if __name__ == "__main__":
             use_amp=True,
             log_interval=50,
             env_action_dim=9,
+            discrete_continuous_dist=False,
+            target_prior_divergence=5.0,
             **vars(args),
         ),
-        num_train_epochs=10000,
         frame_stack=1,
-        # replay_buffer_capacity=int(2.5e6),
-        # action_repeat=1,
+        replay_buffer_capacity=int(2.5e6),
+        action_repeat=1,
         num_eval_episodes=5,
-        # init_steps=2500,
-        # pre_transform_image_size=64,
-        # image_size=64,
-        env_name=None,  # will be replaced by the arg # slide-cabinet
-        batch_size=128,  # 512 originally for online RL
-        # eval_freq=1000,
-        # log_interval=1000,
-        # env_kwargs=dict(
-        #    dense=False,
-        #    image_obs=True,
-        #    action_scale=1,
-        #    control_mode="end_effector",
-        #    frame_skip=40,
-        #    imwidth=84,
-        #    imheight=84,
-        #    usage_kwargs=dict(
-        #        use_dm_backend=True,
-        #        use_raw_action_wrappers=False,
-        #        use_image_obs=True,
-        #        max_path_length=280,
-        #        unflatten_images=True,
-        #    ),
-        #    image_kwargs=dict(),
-        # ),
+        num_train_steps=int(1e6),
+        init_steps=2500,
+        pre_transform_image_size=64,
+        image_size=64,
+        env_name="kitchen-mixed-v0",  # slide-cabinet
+        batch_size=512,  # 512 originally for online RL
+        eval_freq=10000,
+        log_interval=1000,
+        env_kwargs=dict(
+            dense=False,
+            image_obs=False,
+            action_scale=1,
+            control_mode="joint_velocity",  # default joint velocity control
+            frame_skip=40,  # default for D4RL kitchen
+            imwidth=84,
+            imheight=84,
+            usage_kwargs=dict(
+                use_dm_backend=True,
+                use_raw_action_wrappers=False,
+                use_image_obs=True,
+                max_path_length=280,
+                unflatten_images=True,
+            ),
+            image_kwargs=dict(),
+        ),
         seed=-1,
-        # use_raw_actions=True,
+        use_raw_actions=True,
         env_suite="kitchen",
     )
 
