@@ -75,14 +75,15 @@ class ActionEncoder(nn.Module):
                 batch_first=True,
             )
         elif model_type == "transformer":
-            self.model = nn.TransformerEncoder(
-                nn.TransformerEncoderLayer(
+            self.model = nn.TransformerDecoder(
+                nn.TransformerDecoderLayer(
                     d_model=action_dim + one_hot_dim,
-                    nhead=4,
+                    nhead=3,
                     dim_feedforward=hidden_dim,
                     dropout=0.0,
+                    batch_first=True,
                 ),
-                n_layers,
+                num_layers=n_layers,
             )
         self.norm = nn.LayerNorm(hidden_dim)
         self.nonlinearity = nn.ReLU()
@@ -97,6 +98,10 @@ class ActionEncoder(nn.Module):
             h = h[-1]
         elif self.model_type == "transformer":
             h = self.model(action_traj)
+            h = h[:, -1]
+            import pdb
+
+            pdb.set_trace()
 
         h = self.norm(h)
         h = self.nonlinearity(h)
@@ -124,14 +129,15 @@ class ActionDecoder(nn.Module):
                 batch_first=True,
             )
         elif model_type == "transformer":
-            self.model = nn.TransformerEncoder(
-                nn.TransformerEncoderLayer(
+            self.model = nn.TransformerDecoder(
+                nn.TransformerDecoderLayer(
                     d_model=latent_dim,
-                    nhead=4,
+                    nhead=2,
                     dim_feedforward=hidden_dim,
                     dropout=0.0,
+                    batch_first=True,
                 ),
-                n_layers,
+                num_layers=n_layers,
             )
         self.norm = nn.LayerNorm(hidden_dim)
         self.nonlinearity = nn.ReLU()
