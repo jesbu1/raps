@@ -17,6 +17,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--exp_prefix", type=str, default="test")
     parser.add_argument("--num_seeds", type=int, default=1)
+    parser.add_argument("--ckpt_load_dir", type=str, required=True)
     parser.add_argument("--mode", type=str, default="local")
     parser.add_argument("--env", type=str, default="")
     args = parser.parse_args()
@@ -41,37 +42,37 @@ if __name__ == "__main__":
             log_interval=100,
             env_action_dim=7,
         ),
-        num_train_epochs=10,
         frame_stack=1,
-        # replay_buffer_capacity=int(2.5e6),
-        # action_repeat=1,
+        replay_buffer_capacity=int(2.5e6),
+        action_repeat=1,
         num_eval_episodes=5,
-        # init_steps=2500,
-        # pre_transform_image_size=64,
-        # image_size=64,
+        num_train_steps=int(1e6),
+        init_steps=2500,
+        pre_transform_image_size=64,
+        image_size=64,
         env_name="kitchen-mixed-v0",  # slide-cabinet
         batch_size=128,  # 512 originally for online RL
-        # eval_freq=1000,
-        # log_interval=1000,
-        # env_kwargs=dict(
-        #    dense=False,
-        #    image_obs=True,
-        #    action_scale=1,
-        #    control_mode="end_effector",
-        #    frame_skip=40,
-        #    imwidth=84,
-        #    imheight=84,
-        #    usage_kwargs=dict(
-        #        use_dm_backend=True,
-        #        use_raw_action_wrappers=False,
-        #        use_image_obs=True,
-        #        max_path_length=280,
-        #        unflatten_images=True,
-        #    ),
-        #    image_kwargs=dict(),
-        # ),
+        eval_freq=1000,
+        log_interval=1000,
+        env_kwargs=dict(
+            dense=False,
+            image_obs=False,
+            action_scale=1,
+            control_mode="joint_velocity",
+            frame_skip=40,  # default for D4RL kitchen
+            imwidth=84,
+            imheight=84,
+            usage_kwargs=dict(
+                use_dm_backend=True,
+                use_raw_action_wrappers=False,
+                use_image_obs=True,
+                max_path_length=280,
+                unflatten_images=True,
+            ),
+            image_kwargs=dict(),
+        ),
         seed=-1,
-        # use_raw_actions=True,
+        use_raw_actions=True,
         env_suite="kitchen",
     )
 

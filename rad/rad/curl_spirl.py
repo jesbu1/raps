@@ -1,4 +1,5 @@
 import copy
+import os
 import math
 
 import numpy as np
@@ -249,6 +250,8 @@ class SPiRLRadSacAgent(RadSacAgent, nn.Module):
         spirl_architecture="rnn",
         spirl_beta=0.1,
         spirl_action_horizon=10,
+        # checkpoint loading
+        ckpt_load_dir=None,
         **kwargs
     ):
         # nn.Module empty init
@@ -416,6 +419,10 @@ class SPiRLRadSacAgent(RadSacAgent, nn.Module):
         self.grad_scaler = torch.cuda.amp.GradScaler(enabled=self.use_amp)
         self.spirl_action_horizon = spirl_action_horizon
 
+        # load model from checkpoint
+        if ckpt_load_dir:
+            self.load(ckpt_load_dir)
+
     def train(self, training=True):
         self.training = training
         self.actor.train(training)
@@ -581,9 +588,34 @@ class SPiRLRadSacAgent(RadSacAgent, nn.Module):
     def save_curl(self, model_dir, step):
         torch.save(self.CURL.state_dict(), "%s/curl_%s.pt" % (model_dir, step))
 
-    def load(self, model_dir, step):
-        self.actor.load_state_dict(torch.load("%s/actor_%s.pt" % (model_dir, step)))
-        self.critic.load_state_dict(torch.load("%s/critic_%s.pt" % (model_dir, step)))
+    def load_curl(self, model_dir, step):
+        self.CURL.load_state_dict(torch.load("%s/curl_%s.pt" % (model_dir, step)))
+
+    def load(self, model_dir):
+        # check if actor or critic or curl checkpoints exist. if they do use them
+        model_ckpts = os.listdir(model_dir)
+        all_actors = [x for x in model_ckpts if "actor" in x]
+        # sort by step, decreasing
+        all_actors = sorted(
+            all_actors, key=lambda x: int(x.split("_")[-1].split(".")[0]), reverse=True
+        )
+        if len(all_actors) > 0:
+            step = all_actors[0].split("_")[-1].split(".")[0]
+            self.actor.load_state_dict(torch.load("%s/actor_%s.pt" % (model_dir, step)))
+            self.critic.load_state_dict(
+                torch.load("%s/critic_%s.pt" % (model_dir, step))
+            )
+            self.critic_target.load_state_dict(
+                torch.load("%s/critic_target_%s.pt" % (model_dir, step))
+            )
+            self.load_curl(model_dir, step)
+        # latest spirl checkpoint
+        all_spirl = [x for x in model_ckpts if "spirl" in x]
+        all_spirl = sorted(
+            all_spirl, key=lambda x: int(x.split("_")[-1].split(".")[0]), reverse=True
+        )
+        spirl_step = all_spirl[0].split("_")[-1].split(".")[0]
+        self.load_spirl(model_dir, spirl_step)
 
     def save(self, model_dir, step):
         torch.save(self.actor.state_dict(), "%s/actor_%s.pt" % (model_dir, step))
@@ -592,6 +624,7 @@ class SPiRLRadSacAgent(RadSacAgent, nn.Module):
             self.critic_target.state_dict(),
             "%s/critic_target_%s.pt" % (model_dir, step),
         )
+        self.save_curl(model_dir, step)
 
     def save_spirl(self, model_dir, step):
         torch.save(
