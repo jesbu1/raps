@@ -183,6 +183,7 @@ def experiment(variant):
         epoch_log_dict = {k: np.mean(v) for k, v in epoch_log_dict.items()}
         epoch_log_dict["epoch"] = epoch
         epoch_log_dict["time/epoch (s)"] = epoch_end_time - epoch_start_time
+        wandb.log(epoch_log_dict)
 
     # save the checkpoint
     agent.save_spirl(work_dir, num_train_epochs)
