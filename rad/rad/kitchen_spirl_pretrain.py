@@ -1,11 +1,8 @@
-import argparse
 from collections import defaultdict
 from tqdm import trange
 import wandb
 
 # import dmc2gym
-import copy
-import json
 import os
 import time
 from collections import OrderedDict
