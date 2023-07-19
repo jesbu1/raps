@@ -53,6 +53,7 @@ if __name__ == "__main__":
     parser.add_argument("--spirl_architecture", default="rnn", type=str)
     parser.add_argument("--use_film", default=False, action="store_true")
     parser.add_argument("--spirl_beta", default=5e-4, type=float)
+    parser.add_argument("--spirl_action_horizon", default=10, type=int)
 
     args = parser.parse_args()
 
@@ -73,7 +74,6 @@ if __name__ == "__main__":
         ),
         num_train_epochs=10000,
         frame_stack=1,
-        spirl_skill_len=10,  # for the dataset
         # replay_buffer_capacity=int(2.5e6),
         # action_repeat=1,
         num_eval_episodes=5,
