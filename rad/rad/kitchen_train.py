@@ -23,7 +23,10 @@ from d4rl.kitchen.kitchen_envs import (
 )
 from rlkit.core import logger as rlkit_logger
 from rlkit.core.eval_util import create_stats_ordered_dict
-from rlkit.envs.primitives_make_env import make_base_kitchen_env, make_base_metaworld_env
+from rlkit.envs.primitives_make_env import (
+    make_base_kitchen_env,
+    make_base_metaworld_env,
+)
 from rlkit.envs.primitives_wrappers import (
     ActionRepeat,
     ImageEnvMetaworld,
@@ -284,12 +287,12 @@ def experiment(variant):
         pre_transform_image_size = 100
         image_size = 108
 
-    if env_suite == 'kitchen':
-        env_kwargs['imwidth'] = pre_transform_image_size
-        env_kwargs['imheight'] = pre_transform_image_size
+    if env_suite == "kitchen":
+        env_kwargs["imwidth"] = pre_transform_image_size
+        env_kwargs["imheight"] = pre_transform_image_size
     else:
-        env_kwargs['image_kwargs']['imwidth'] = pre_transform_image_size
-        env_kwargs['image_kwargs']['imheight'] = pre_transform_image_size
+        env_kwargs["image_kwargs"]["imwidth"] = pre_transform_image_size
+        env_kwargs["image_kwargs"]["imheight"] = pre_transform_image_size
 
     expl_env = primitives_make_env.make_env(env_suite, env_name, env_kwargs)
     eval_env = primitives_make_env.make_env(env_suite, env_name, env_kwargs)
@@ -350,7 +353,7 @@ def experiment(variant):
             pre_transform_image_size,
         )
     else:
-        obs_shape = env.observation_space.shape
+        obs_shape = expl_env.observation_space.shape
         pre_aug_obs_shape = obs_shape
 
     replay_buffer = utils.ReplayBuffer(
@@ -386,7 +389,7 @@ def experiment(variant):
         # evaluate agent periodically
 
         if step % eval_freq == 0:
-            total_train_expl_time += time.time()-train_expl_st
+            total_train_expl_time += time.time() - train_expl_st
             L.log("eval/episode", episode, step)
             evaluate(
                 eval_env,
@@ -432,7 +435,9 @@ def experiment(variant):
                     "time/epoch (s)", time.time() - epoch_start_time
                 )
                 rlkit_logger.record_tabular("time/total (s)", time.time() - start_time)
-                rlkit_logger.record_tabular("time/training and exploration (s)", total_train_expl_time)
+                rlkit_logger.record_tabular(
+                    "time/training and exploration (s)", total_train_expl_time
+                )
                 rlkit_logger.record_tabular("trainer/num train calls", num_train_calls)
                 rlkit_logger.record_tabular("exploration/num steps total", step)
                 rlkit_logger.record_tabular("Epoch", step // log_interval)
@@ -440,7 +445,6 @@ def experiment(variant):
                 all_infos = []
                 epoch_start_time = time.time()
             ep_infos = []
-
 
         # sample action for data collection
         if step < init_steps:

@@ -32,6 +32,7 @@ from rad.curl_spirl import SPiRLRadSacAgent
 from rad.logger import Logger
 from rad.video import VideoRecorder
 from rad.kitchen_train import compute_path_info
+from rad.kitchen_spirl_pretrain import make_agent
 
 
 def evaluate(
@@ -68,9 +69,9 @@ def evaluate(
                     obs = utils.center_translate(obs, image_size)
                 with utils.eval_mode(agent):
                     if sample_stochastically:
-                        action = agent.sample_action(obs / 255.0)
+                        action = agent.sample_action(obs)
                     else:
-                        action = agent.select_action(obs / 255.0)
+                        action = agent.select_action(obs)
                 obs, reward, done, info = env.step(action)
                 if record_video:
                     frames.append(env.render(mode="rgb_array"))
@@ -102,23 +103,6 @@ def evaluate(
     return log_data
 
 
-def make_agent(
-    obs_shape,
-    continuous_action_dim,
-    discrete_action_dim,
-    agent_kwargs,
-    device,
-):
-    return SPiRLRadSacAgent(
-        obs_shape=obs_shape,
-        continuous_action_dim=continuous_action_dim,
-        discrete_action_dim=discrete_action_dim,
-        # env_action_dim=agent_kwargs["env_action_dim"],
-        device=device,
-        **agent_kwargs,
-    )
-
-
 def experiment(variant):
     work_dir = rlkit_logger.get_snapshot_dir()
     seed = int(variant["seed"])
@@ -135,14 +119,13 @@ def experiment(variant):
     frame_stack = variant["frame_stack"]
     batch_size = variant["batch_size"]
     num_train_epochs = variant["num_train_epochs"]  # new arg
-    spirl_skill_len = variant["agent_kwargs"]["spirl_action_horizon"]
     run_group = variant["run_group"]
     replay_buffer_capacity = variant["replay_buffer_capacity"]
     num_train_steps = variant["num_train_steps"]
     num_eval_episodes = variant["num_eval_episodes"]
     eval_freq = variant["eval_freq"]
+    init_steps = variant["init_steps"]
     log_interval = variant["log_interval"]
-    use_raw_actions = variant["use_raw_actions"]
     pre_transform_image_size = (
         pre_transform_image_size if "crop" in data_augs else image_size
     )
@@ -169,7 +152,8 @@ def experiment(variant):
     ts = time.strftime("%m-%d", ts)
     env_name = env_name
     exp_name = (
-        env_name
+        "SPiRL-online-"
+        + env_name
         + "-"
         + ts
         + "-im"
@@ -182,20 +166,12 @@ def experiment(variant):
         + encoder_type
     )
     work_dir = work_dir + "/" + exp_name
-
     utils.make_dir(work_dir)
-    # video_dir = utils.make_dir(os.path.join(work_dir, "video"))
-    model_dir = utils.make_dir(os.path.join(work_dir, "model"))
     buffer_dir = utils.make_dir(os.path.join(work_dir, "buffer"))
-
-    # video = VideoRecorder(video_dir if args.save_video else None)
-
-    # with open(os.path.join(work_dir, "args.json"), "w") as f:
-    #    json.dump(vars(args), f, sort_keys=True, indent=4)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    continuous_action_dim = env.action_space.low.size
+    continuous_action_dim = expl_env.action_space.low.size
     discrete_action_dim = 0
 
     if encoder_type == "pixel":
@@ -206,17 +182,31 @@ def experiment(variant):
             pre_transform_image_size,
         )
     else:
-        obs_shape = env.observation_space.shape
+        obs_shape = expl_env.observation_space.shape
         pre_aug_obs_shape = obs_shape
 
-    d4rl_dataset = env.get_dataset()
+    if encoder_type == "pixel":
+        obs_shape = (3 * frame_stack, image_size, image_size)
+        pre_aug_obs_shape = (
+            3 * frame_stack,
+            pre_transform_image_size,
+            pre_transform_image_size,
+        )
+    else:
+        obs_shape = expl_env.observation_space.shape
+        pre_aug_obs_shape = obs_shape
 
-    spirl_dataset = utils.D4RLSequenceSplitDataset(
+    replay_buffer = utils.ReplayBuffer(
+        obs_shape=pre_aug_obs_shape,
+        action_size=continuous_action_dim + discrete_action_dim,
+        capacity=replay_buffer_capacity,
         batch_size=batch_size,
         device=device,
-        d4rl_dataset=d4rl_dataset,
-        skill_len=spirl_skill_len,
+        image_size=image_size,
+        pre_image_size=pre_transform_image_size,
     )
+    # load buffer if it already exists
+    replay_buffer.load(buffer_dir)
 
     agent = make_agent(
         obs_shape=obs_shape,
@@ -232,11 +222,8 @@ def experiment(variant):
         project="p-amazon-intern", config=variant, name=exp_name, group=run_group
     )
 
-    # L = Logger(work_dir, use_tb=args.save_tb)
-
     agent.train_spirl()  # not even necessary but just to be sure
     agent = agent.to(device)
-    for epoch in trange(num_train_epochs):
         epoch_log_dict = defaultdict(list)
         epoch_start_time = time.time()
         for step in range(int(len(spirl_dataset) / batch_size)):
@@ -250,3 +237,77 @@ def experiment(variant):
 
     # save the checkpoint
     agent.save_spirl(work_dir, num_train_epochs)
+
+    episode, episode_reward, done = 0, 0, True
+    #start_time = time.time()
+    #epoch_start_time = time.time()
+    #train_expl_st = time.time()
+    total_train_expl_time = 0
+    all_infos = []
+    ep_infos = []
+    num_train_calls = 0
+    log_dict = {}
+    for step in trange(num_train_steps):
+        # evaluate agent periodically
+        if step % eval_freq == 0:
+            total_train_expl_time += time.time() - train_expl_st
+            eval_log_data = evaluate(
+                eval_env,
+                agent,
+                num_eval_episodes,
+                encoder_type,
+                data_augs,
+                image_size,
+                pre_transform_image_size,
+                record_video=True,
+            )
+            agent.save(work_dir, step)
+            replay_buffer.save(buffer_dir)
+            train_expl_st = time.time()
+            log_dict.update(eval_log_data)
+        if done:
+            log_dict["train/episode_reward"]= episode_reward
+            obs = expl_env.reset()
+            done = False
+            episode_reward = 0
+            episode_step = 0
+            episode += 1
+            all_infos.append(ep_infos)
+
+            log_dict["train/episode"] = episode
+            statistics = compute_path_info(all_infos)
+            for k, v in statistics.items():
+                log_dict[f"train/{k}"] = v
+
+            log_dict["trainer/num train calls"] = num_train_calls
+            wandb.log(log_dict, step=step)
+            log_dict = {}
+
+        # sample action for data collection
+        #if step < init_steps:
+        #    action = expl_env.action_space.sample()
+        #else:
+
+        # TODO: take care of tracking current obs, next obs to add and the latent action
+        with utils.eval_mode(agent):
+            action = agent.sample_action(obs)
+
+        training_log = {}
+        # run training update
+        if step >= init_steps:
+            num_updates = 1
+            for _ in range(num_updates):
+                agent.update(replay_buffer, training_log, step)
+                num_train_calls += 1
+
+        next_obs, reward, done, info = expl_env.step(action)
+        ep_infos.append(info)
+        # allow infinit bootstrap
+        done_bool = (
+            0 if episode_step + 1 == expl_env._max_episode_steps else float(done)
+        )
+        episode_reward += reward
+        replay_buffer.add(obs, action, reward, next_obs, done_bool)
+
+        obs = next_obs
+        episode_step += 1

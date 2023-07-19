@@ -102,7 +102,8 @@ def experiment(variant):
     ts = time.strftime("%m-%d", ts)
     env_name = env_name
     exp_name = (
-        env_name
+        "SPiRL-pretrain-"
+        + env_name
         + "-"
         + ts
         + "-im"
