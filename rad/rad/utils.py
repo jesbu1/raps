@@ -258,7 +258,6 @@ class D4RLSequenceSplitDataset(Dataset):
         self.device = device
         self.batch_size = batch_size
 
-        env = gym.make(self.spec.env_name)
         self.dataset = d4rl_dataset
 
         # split dataset into sequences
@@ -273,10 +272,14 @@ class D4RLSequenceSplitDataset(Dataset):
             self.seq_actions.append(self.dataset["actions"][start : end_idx + 1])
             start = end_idx + 1
 
-        self.seq_lens = np.array([len(seq["states"]) for seq in self.seqs]).astype(int)
-        self.batch_size_arange = np.arange(self.batch_size)
+        # convert to numpy arrays so we can do batched indexing
+        self.seq_states = np.array(self.seq_states)
+        self.seq_actions = np.array(self.seq_actions)
 
-        self.n_seqs = len(self.seqs)
+        self.seq_lens = np.array([len(seq) for seq in self.seq_states]).astype(int)
+        self.batch_size_arange = np.arange(self.batch_size).astype(int)
+
+        self.n_seqs = len(self.seq_states)
 
         self.start = 0
         self.end = self.n_seqs
@@ -286,33 +289,52 @@ class D4RLSequenceSplitDataset(Dataset):
             self.n_seqs,
             size=self.batch_size,
             replace=True,
-        )
+        ).astype(int)
         batch_start = np.random.randint(
-            0, self.seq_lens - self.subseq_len, size=(self.batch_size)
+            0, self.seq_lens[indices] - self.subseq_len - 1, size=(self.batch_size)
         )
-        batch_state_indices = np.linspace(
-            batch_start,
-            batch_start + self.self.subseq_len + 1,
-            self.subseq_len,
-            endpoint=False,
-        ).astype(int)
-        batch_action_indices = np.linspace(
-            batch_start,
-            batch_start + self.self.subseq_len,
-            self.subseq_len,
-            endpoint=False,
-        ).astype(int)
-        states = self.seq_states[indices][
-            self.batch_size_arange, batch_state_indices
-        ].to(self.device)
-        actions = self.seq_actions[indices][
-            self.batch_size_arange, batch_action_indices
-        ].to(self.device)
-        # sample start index in data range
+        batch_state_indices = (
+            np.linspace(
+                batch_start,
+                batch_start + self.subseq_len + 1,
+                self.subseq_len + 1,
+                endpoint=False,
+            )
+            .astype(int)
+            .transpose(1, 0)
+        )
+        batch_action_indices = (
+            np.linspace(
+                batch_start,
+                batch_start + self.subseq_len,
+                self.subseq_len,
+                endpoint=False,
+            )
+            .astype(int)
+            .transpose(1, 0)
+        )
+        states = np.array(
+            [
+                self.seq_states[i][seq_range]
+                for i, seq_range in zip(indices, batch_state_indices)
+            ]
+        )
+        actions = np.array(
+            [
+                self.seq_actions[i][seq_range]
+                for i, seq_range in zip(indices, batch_action_indices)
+            ]
+        )
+        # states = self.seq_states[indices][
+        #    self.batch_size_arange, batch_state_indices
+        # ].to(self.device)
+        # actions = self.seq_actions[indices][
+        #    self.batch_size_arange, batch_action_indices
+        # ].to(self.device)
+        assert states.shape[1] == actions.shape[1] + 1
+        states = torch.from_numpy(states).to(self.device)
+        actions = torch.from_numpy(actions).to(self.device)
         return states, actions
-
-    def _sample_seq(self):
-        return np.random.choice(self.seqs[self.start : self.end])
 
     def __len__(self):
         return int(self.dataset["observations"].shape[0] / self.subseq_len)
@@ -390,4 +412,4 @@ def gaussian_kl_divergence(q_mu, q_logsigma, p_mu, p_logsigma):
         + (torch.exp(q_logsigma) ** 2 + (q_mu - p_mu) ** 2)
         / (2 * torch.exp(p_logsigma) ** 2)
         - 0.5
-    )
+    ).mean()

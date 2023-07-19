@@ -16,6 +16,7 @@ from rad.encoder import make_encoder
 
 LOG_FREQ = 10000
 
+
 class ObsPrior(nn.Module):
     def __init__(
         self,
@@ -38,12 +39,15 @@ class ObsPrior(nn.Module):
             obs_encoder_num_filters,
             output_logits=True,
             film=use_film,
-            film_input_dim=film_input_dim, 
+            film_input_dim=film_input_dim,
         )
-        self.linear = nn.Sequential(
-            *[nn.Linear(obs_encoder_output_dim, obs_encoder_output_dim), nn.ReLU() for _ in range(num_linear_layers - 1)],
-            nn.Linear(obs_encoder_output_dim, output_dim * 2),
-        )
+        self.linear = []
+        encoder_feature_dim = self.encoder.feature_dim
+        for _ in range(num_linear_layers - 1):
+            self.linear.append(nn.Linear(encoder_feature_dim, encoder_feature_dim))
+            self.linear.append(nn.ReLU())
+        self.linear.append(nn.Linear(encoder_feature_dim, output_dim * 2))
+        self.linear = nn.Sequential(*self.linear)
 
     def forward(self, obs, one_hot=None):
         h = self.encoder(obs, film_input=one_hot)
@@ -100,28 +104,20 @@ class ActionEncoder(nn.Module):
         mu, log_std = self.linear(h).chunk(2, dim=-1)
         return mu, log_std
 
+
 class ActionDecoder(nn.Module):
     def __init__(
-        self, 
+        self,
         latent_dim,
         hidden_dim,
         output_dim,
         n_layers,
         model_type="rnn",
-        closed_loop=False,
-        cl_encoder=None,
-        ):
+    ):
         super().__init__()
-        self.closed_loop = closed_loop
-        if closed_loop:
-            assert cl_encoder is not None
-            self.cl_encoder = cl_encoder
-            self.obs_input_size = cl_encoder.feature_dim
-        else:
-            self.obs_input_size = 0
         if model_type == "rnn":
             self.model = nn.GRU(
-                latent_dim + self.obs_input_size,
+                latent_dim,
                 hidden_dim,
                 n_layers,
                 batch_first=True,
@@ -140,67 +136,75 @@ class ActionDecoder(nn.Module):
         self.nonlinearity = nn.ReLU()
         self.linear = nn.Linear(hidden_dim, output_dim)
         self.model_type = model_type
-        self.closed_loop = closed_loop
-        self.cl_encoder = cl_encoder
 
-    def forward(self, action_traj, obs=None, one_hot=None):
-        if self.closed_loop:
-            obs = self.cl_encoder(obs, one_hot)
-            obs = obs.unsqueeze(1).expand(-1, action_traj.shape[1], -1)
-            action_traj = torch.cat((action_traj, obs), -1)
+    def forward(self, latents, obs=None, one_hot=None):
         if self.model_type == "rnn":
-            _, h = self.model(action_traj)
-            h = h[-1]
+            decoded_actions, _ = self.model(latents)
         elif self.model_type == "transformer":
-            h = self.model(action_traj)
-        h = self.norm(h)
-        h = self.nonlinearity(h)
-        return self.linear(h)
-    
+            decoded_actions = self.model(latents)
+        # resize
+        decoded_actions = decoded_actions.reshape(
+            (
+                decoded_actions.shape[0] * decoded_actions.shape[1],
+                decoded_actions.shape[2],
+            )
+        )
+        acs = self.norm(decoded_actions)
+        acs = self.nonlinearity(acs)
+        acs = self.linear(acs)
+        acs = acs.reshape((latents.shape[0], latents.shape[1], acs.shape[1]))
+        return acs
+
+
 class ClosedLoopActionDecoder(nn.Module):
     # this will be an Action Decoder MLP
     def __init__(
-        self, 
+        self,
         latent_dim,
         hidden_dim,
         output_dim,
-        n_layers,
+        num_linear_layers,
         cl_encoder,
-        ):
+    ):
         super().__init__()
         self.cl_encoder = cl_encoder
         self.obs_input_size = cl_encoder.feature_dim
-
-        if model_type == "rnn":
-            self.model = nn.GRU(
-                latent_dim + self.obs_input_size,
-                hidden_dim,
-                n_layers,
-                batch_first=True,
-            )
-        elif model_type == "transformer":
-            self.model = nn.TransformerEncoder(
-                nn.TransformerEncoderLayer(
-                    d_model=latent_dim,
-                    nhead=4,
-                    dim_feedforward=hidden_dim,
-                    dropout=0.0,
-                ),
-                n_layers,
-            )
+        self.layers = []
+        for i in range(num_linear_layers - 1):
+            if i == 0:
+                self.layers.append(
+                    nn.Linear(latent_dim + self.obs_input_size, hidden_dim)
+                )
+            else:
+                self.layers.append(nn.Linear(hidden_dim, hidden_dim))
+            self.linear.append(nn.ReLU())
+        self.linear.append(nn.Linear(hidden_dim, output_dim * 2))
+        self.linear = nn.Sequential(*self.linear)
         self.norm = nn.LayerNorm(hidden_dim)
         self.nonlinearity = nn.ReLU()
         self.linear = nn.Linear(hidden_dim, output_dim)
-        self.model_type = model_type
-        self.closed_loop = closed_loop
         self.cl_encoder = cl_encoder
 
-    
+    def forward(self, latents, obs, one_hot=None):
+        # reshape obs as it's a sequence
+        if len(obs.shape) == 5:
+            # images
+            obs = obs.reshape(
+                (obs.shape[0] * obs.shape[1], obs.shape[2], obs.shape[3], obs.shape[4])
+            )
+        else:
+            # state
+            obs = obs.reshape((obs.shape[0] * obs.shape[1], obs.shape[2]))
+        obs = self.cl_encoder(obs, one_hot)
+        latents = torch.cat((latents, obs), -1)
+        h = self.norm(latents)
+        h = self.nonlinearity(h)
+        acs = self.linear(h)
+        acs = acs.reshape((latents.shape[0], latents.shape[1], acs.shape[1]))
+        return acs
 
 
-
-
-class SPiRLRadSacAgent(RadSacAgent):
+class SPiRLRadSacAgent(RadSacAgent, nn.Module):
     """SPIRL built on top of RAD with SAC."""
 
     def __init__(
@@ -243,8 +247,11 @@ class SPiRLRadSacAgent(RadSacAgent):
         spirl_closed_loop=False,
         use_film=False,
         spirl_architecture="rnn",
-        spirl_beta = 0.1,
+        spirl_beta=0.1,
+        **kwargs
     ):
+        # nn.Module empty init
+        nn.Module.__init__(self)
         torch.backends.cudnn.benchmark = True
         self.device = device
         self.discount = discount
@@ -291,7 +298,7 @@ class SPiRLRadSacAgent(RadSacAgent):
             discrete_continuous_dist,
             continuous_action_dim,
             discrete_action_dim,
-        ).to(device)
+        )
 
         self.critic = Critic(
             obs_shape,
@@ -301,7 +308,7 @@ class SPiRLRadSacAgent(RadSacAgent):
             encoder_feature_dim,
             num_layers,
             num_filters,
-        ).to(device)
+        )
 
         self.critic_target = Critic(
             obs_shape,
@@ -311,14 +318,14 @@ class SPiRLRadSacAgent(RadSacAgent):
             encoder_feature_dim,
             num_layers,
             num_filters,
-        ).to(device)
+        )
 
         self.critic_target.load_state_dict(self.critic.state_dict())
 
         # tie encoders between actor and critic, and CURL and critic
         self.actor.encoder.copy_conv_weights_from(self.critic.encoder)
 
-        self.log_alpha = torch.tensor(np.log(init_temperature)).to(device)
+        self.log_alpha = torch.tensor(np.log(init_temperature))
         self.log_alpha.requires_grad = True
         # set target entropy to -|A|
         self.target_entropy = -np.prod(continuous_action_dim + discrete_action_dim)
@@ -345,7 +352,7 @@ class SPiRLRadSacAgent(RadSacAgent):
                 self.critic,
                 self.critic_target,
                 output_type="continuous",
-            ).to(self.device)
+            )
 
             # optimizer for critic encoder for reconstruction loss
             self.encoder_optimizer = torch.optim.Adam(
@@ -369,29 +376,39 @@ class SPiRLRadSacAgent(RadSacAgent):
             env_action_dim,
             hidden_dim,
             spirl_latent_dim,
-            num_layers=1,  # just one processing layer is fine
+            n_layers=1,  # just one processing layer is fine
             model_type=spirl_architecture,
         )
         self.spirl_prior = ObsPrior(
             spirl_latent_dim,
             spirl_encoder_type,
-            2,
+            num_layers,
             obs_shape,
             encoder_feature_dim,
             num_layers,
             num_filters,
+            use_film=use_film,
         )
-        self.spirl_decoder = ActionDecoder(
-            spirl_latent_dim,
-            hidden_dim,
-            env_action_dim,
-            num_layers=1,
-            closed_loop=spirl_closed_loop,
-            cl_encoder=self.spirl_prior.encoder,
-            model_type=spirl_architecture
-        )
+        if spirl_closed_loop:
+            self.spirl_decoder = ClosedLoopActionDecoder(
+                spirl_latent_dim,
+                hidden_dim,
+                env_action_dim,
+                num_linear_layers=num_layers,
+                cl_encoder=self.critic.encoder,
+            )
+        else:
+            self.spirl_decoder = ActionDecoder(
+                spirl_latent_dim,
+                hidden_dim,
+                env_action_dim,
+                n_layers=1,
+                model_type=spirl_architecture,
+            )
         self.spirl_optimizer = torch.optim.Adam(
-            list(self.spirl_encoder.parameters()) + list(self.spirl_prior.parameters()) + list(self.spirl_decoder.parameters()),
+            list(self.spirl_encoder.parameters())
+            + list(self.spirl_prior.parameters())
+            + list(self.spirl_decoder.parameters()),
             lr=encoder_lr,
         )
         self.use_amp = use_amp
@@ -410,29 +427,41 @@ class SPiRLRadSacAgent(RadSacAgent):
         self.spirl_prior.train(training)
         self.spirl_decoder.train(training)
 
-    def spirl_update(self, replay_buffer, L, step):
+    def spirl_update(self, replay_buffer, step):
         # TODO: integrate a multi-skill spirl version (not yet) as I need to first test straightforward spirl
         with torch.cuda.amp.autocast(enabled=self.use_amp):
-            obs, actions = replay_buffer.sample_spirl_trajs()
+            obs, actions = replay_buffer.get_batch()
 
             # compute prior
-            prior_mu, prior_log_std = self.spirl_prior(obs)
+            # select first obs for the prior
+            first_obs = obs[:, 0]
+            prior_mu, prior_log_std = self.spirl_prior(first_obs)
 
             # compute posterior
             posterior_mu, posterior_log_std = self.spirl_encoder(actions)
 
             # compute kl divergence for the prior
-            kl_div_prior = utils.gaussian_kl_divergence(posterior_mu.detach(), posterior_log_std.detach(), prior_mu, prior_log_std)
+            kl_div_prior = utils.gaussian_kl_divergence(
+                posterior_mu.detach(),
+                posterior_log_std.detach(),
+                prior_mu,
+                prior_log_std,
+            )
 
-            # compute KL divergence for the encoder 
+            # compute KL divergence for the encoder
             gaussian_mu = torch.zeros_like(posterior_mu)
             gaussian_log_std = torch.zeros_like(posterior_log_std)
-            kl_div_encoder = utils.gaussian_kl_divergence(posterior_mu, posterior_log_std, gaussian_mu, gaussian_log_std)
+            kl_div_encoder = utils.gaussian_kl_divergence(
+                posterior_mu, posterior_log_std, gaussian_mu, gaussian_log_std
+            )
 
             # sample from posterior gaussian
             z = Normal(posterior_mu, posterior_log_std.exp()).rsample()
 
             # compute reconstruction loss
+            z = z.unsqueeze(1).expand(-1, actions.shape[1], -1)
+            # get all but last from obs
+            obs = obs[:, :-1]
             recon = self.spirl_decoder(z, obs)
             recon_loss = F.mse_loss(recon, actions)
 
@@ -441,24 +470,29 @@ class SPiRLRadSacAgent(RadSacAgent):
 
             # update
             self.spirl_optimizer.zero_grad()
-            loss.backward()
+            self.grad_scaler.scale(loss).backward()
             self.grad_scaler.step(self.spirl_optimizer)
             self.grad_scaler.update()
 
+            # log
+            log_dict = {}
             if step % self.log_interval == 0:
-                L.log("spirl_train/recon_loss", recon_loss.item(), step)
-                L.log("spirl_train/kl_div_prior", kl_div_prior.item(), step)
-                L.log("spirl_train/kl_div_encoder", kl_div_encoder.item(), step)
                 # log reconstruction loss with spirl prior
                 with torch.no_grad():
+                    prior_mu = prior_mu.unsqueeze(1).expand(-1, actions.shape[1], -1)
                     prior_recon = self.spirl_decoder(prior_mu, obs)
                     prior_recon_loss = F.mse_loss(prior_recon, actions)
-                L.log("spirl_train/prior_recon_loss", prior_recon_loss.item(), step)
+                log_dict = dict(
+                    recon_loss=recon_loss.item(),
+                    kl_div_prior=kl_div_prior.item(),
+                    kl_div_encoder=kl_div_encoder.item(),
+                    prior_recon_loss=prior_recon_loss.item(),
+                )
+        return log_dict
 
     def reset(self):
         # reset all of the online RL stuff
         self.current_action_trajs = []
-
 
     def select_action(self, obs):
         # TODO: SPiRL integration
@@ -515,7 +549,6 @@ class SPiRLRadSacAgent(RadSacAgent):
     def save_curl(self, model_dir, step):
         torch.save(self.CURL.state_dict(), "%s/curl_%s.pt" % (model_dir, step))
 
-
     def load(self, model_dir, step):
         self.actor.load_state_dict(torch.load("%s/actor_%s.pt" % (model_dir, step)))
         self.critic.load_state_dict(torch.load("%s/critic_%s.pt" % (model_dir, step)))
@@ -529,13 +562,32 @@ class SPiRLRadSacAgent(RadSacAgent):
         )
 
     def save_spirl(self, model_dir, step):
-        torch.save(self.spirl_encoder.state_dict(), "%s/spirl_encoder_%s.pt" % (model_dir, step))
-        torch.save(self.spirl_prior.state_dict(), "%s/spirl_prior_%s.pt" % (model_dir, step))
-        torch.save(self.spirl_decoder.state_dict(), "%s/spirl_decoder_%s.pt" % (model_dir, step))
-        torch.save(self.spirl_optimizer.state_dict(), "%s/spirl_optimizer_%s.pt" % (model_dir, step))
+        torch.save(
+            self.spirl_encoder.state_dict(),
+            "%s/spirl_encoder_%s.pt" % (model_dir, step),
+        )
+        torch.save(
+            self.spirl_prior.state_dict(), "%s/spirl_prior_%s.pt" % (model_dir, step)
+        )
+        torch.save(
+            self.spirl_decoder.state_dict(),
+            "%s/spirl_decoder_%s.pt" % (model_dir, step),
+        )
+        torch.save(
+            self.spirl_optimizer.state_dict(),
+            "%s/spirl_optimizer_%s.pt" % (model_dir, step),
+        )
 
     def load_spirl(self, model_dir, step):
-        self.spirl_encoder.load_state_dict(torch.load("%s/spirl_encoder_%s.pt" % (model_dir, step)))
-        self.spirl_prior.load_state_dict(torch.load("%s/spirl_prior_%s.pt" % (model_dir, step)))
-        self.spirl_decoder.load_state_dict(torch.load("%s/spirl_decoder_%s.pt" % (model_dir, step)))
-        self.spirl_optimizer.load_state_dict(torch.load("%s/spirl_optimizer_%s.pt" % (model_dir, step)))
+        self.spirl_encoder.load_state_dict(
+            torch.load("%s/spirl_encoder_%s.pt" % (model_dir, step))
+        )
+        self.spirl_prior.load_state_dict(
+            torch.load("%s/spirl_prior_%s.pt" % (model_dir, step))
+        )
+        self.spirl_decoder.load_state_dict(
+            torch.load("%s/spirl_decoder_%s.pt" % (model_dir, step))
+        )
+        self.spirl_optimizer.load_state_dict(
+            torch.load("%s/spirl_optimizer_%s.pt" % (model_dir, step))
+        )

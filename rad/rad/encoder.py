@@ -131,7 +131,9 @@ class PixelEncoder(nn.Module):
 
 
 class IdentityEncoder(nn.Module):
-    def __init__(self, obs_shape, feature_dim, num_layers, num_filters, *args):
+    def __init__(
+        self, obs_shape, feature_dim, num_layers, num_filters, *args, **kwargs
+    ):
         super().__init__()
 
         assert len(obs_shape) == 1
@@ -157,9 +159,10 @@ def make_encoder(
     num_layers,
     num_filters,
     output_logits=False,
-    *args
+    *args,
+    **kwargs,
 ):
     assert encoder_type in _AVAILABLE_ENCODERS
     return _AVAILABLE_ENCODERS[encoder_type](
-        obs_shape, feature_dim, num_layers, num_filters, output_logits, *args
+        obs_shape, feature_dim, num_layers, num_filters, output_logits, *args, **kwargs
     )

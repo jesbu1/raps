@@ -1,9 +1,6 @@
 from gym.envs.registration import register
 
-from .kitchen_envs import (
-    KitchenHingeSlideBottomLeftBurnerLightV0,
-    KitchenMicrowaveKettleLightTopLeftBurnerV0,
-)
+from .kitchen_envs import *
 
 # Smaller dataset with only positive demonstrations.
 register(
@@ -35,7 +32,8 @@ register(
 # components of the task.
 register(
     id="kitchen-mixed-v0",
-    entry_point="d4rl.kitchen:KitchenMicrowaveKettleBottomLeftBurnerLightV0",
+    # entry_point="d4rl.kitchen:KitchenMicrowaveKettleBottomLeftBurnerLightV0", # not sure why murtaza put this here
+    entry_point="d4rl.kitchen:KitchenMicrowaveKettleBottomBurnerLightV0",
     max_episode_steps=280,
     kwargs={
         "ref_min_score": 0.0,
