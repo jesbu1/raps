@@ -50,7 +50,6 @@ if __name__ == "__main__":
     parser.add_argument("--detach_encoder", default=False, action="store_true")
     # spirl
     parser.add_argument("--spirl_latent_dim", default=10, type=int)
-    parser.add_argument("--spirl_encoder_type", default="identity", type=str)
     parser.add_argument("--spirl_closed_loop", default=False, action="store_true")
     parser.add_argument("--spirl_architecture", default="rnn", type=str)
     parser.add_argument("--use_film", default=False, action="store_true")

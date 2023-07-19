@@ -170,20 +170,16 @@ class ClosedLoopActionDecoder(nn.Module):
         super().__init__()
         self.cl_encoder = cl_encoder
         self.obs_input_size = cl_encoder.feature_dim
-        self.layers = []
+        layers = []
         for i in range(num_linear_layers - 1):
             if i == 0:
-                self.layers.append(
-                    nn.Linear(latent_dim + self.obs_input_size, hidden_dim)
-                )
+                layers.append(nn.Linear(latent_dim + self.obs_input_size, hidden_dim))
             else:
-                self.layers.append(nn.Linear(hidden_dim, hidden_dim))
-            self.linear.append(nn.ReLU())
-        self.linear.append(nn.Linear(hidden_dim, output_dim * 2))
-        self.linear = nn.Sequential(*self.linear)
-        self.norm = nn.LayerNorm(hidden_dim)
-        self.nonlinearity = nn.ReLU()
-        self.linear = nn.Linear(hidden_dim, output_dim)
+                layers.append(nn.Linear(hidden_dim, hidden_dim))
+            layers.append(nn.LayerNorm(hidden_dim))
+            layers.append(nn.ReLU())
+        layers.append(nn.Linear(hidden_dim, output_dim))
+        self.linear = nn.Sequential(*layers)
         self.cl_encoder = cl_encoder
 
     def forward(self, latents, obs, one_hot=None):
@@ -197,11 +193,13 @@ class ClosedLoopActionDecoder(nn.Module):
             # state
             obs = obs.reshape((obs.shape[0] * obs.shape[1], obs.shape[2]))
         obs = self.cl_encoder(obs, one_hot)
+        original_shape = latents.shape
+        latents = latents.reshape(
+            (latents.shape[0] * latents.shape[1], latents.shape[2])
+        )
         latents = torch.cat((latents, obs), -1)
-        h = self.norm(latents)
-        h = self.nonlinearity(h)
-        acs = self.linear(h)
-        acs = acs.reshape((latents.shape[0], latents.shape[1], acs.shape[1]))
+        acs = self.linear(latents)
+        acs = acs.reshape((original_shape[0], original_shape[1], acs.shape[1]))
         return acs
 
 
@@ -244,7 +242,6 @@ class SPiRLRadSacAgent(RadSacAgent, nn.Module):
         use_amp=True,
         # SPiRL specific parameters below
         spirl_latent_dim=10,
-        spirl_encoder_type="pixel",
         spirl_closed_loop=False,
         use_film=False,
         spirl_architecture="rnn",
@@ -404,7 +401,7 @@ class SPiRLRadSacAgent(RadSacAgent, nn.Module):
                 hidden_dim,
                 env_action_dim,
                 num_linear_layers=num_layers,
-                cl_encoder=self.critic.encoder,
+                cl_encoder=self.spirl_prior.encoder,
             )
         else:
             self.spirl_decoder = ActionDecoder(
@@ -431,6 +428,7 @@ class SPiRLRadSacAgent(RadSacAgent, nn.Module):
             self.load(ckpt_load_dir)
 
         # TODO: discount according to variable length skills
+        # TODO: freeze the closed loop decoder's encoder maybe? prob not
 
     def train(self, training=True):
         self.training = training
@@ -518,7 +516,9 @@ class SPiRLRadSacAgent(RadSacAgent, nn.Module):
             # compute prior
             # select first obs for the prior
             first_obs = obs[:, 0]
-            prior_mu, prior_log_std = self.spirl_prior(first_obs)
+            prior_mu, _, _, prior_log_std = self.spirl_prior(
+                first_obs, compute_pi=False, compute_log_pi=False
+            )
 
             # compute posterior
             posterior_mu, posterior_log_std = self.spirl_encoder(actions)
@@ -631,7 +631,7 @@ class SPiRLRadSacAgent(RadSacAgent, nn.Module):
     def sample_action(self, obs):
         return self.get_deterministic_action_from_decoder(obs, sample_hl_action=True)
 
-    def update(self, replay_buffer, L, step):
+    def update(self, replay_buffer, log_dict, step):
         if self.encoder_type == "pixel":
             obs, action, reward, next_obs, not_done = replay_buffer.sample_rad(
                 self.augs_funcs
@@ -640,12 +640,12 @@ class SPiRLRadSacAgent(RadSacAgent, nn.Module):
             obs, action, reward, next_obs, not_done = replay_buffer.sample_proprio()
 
         if step % self.log_interval == 0:
-            L.log("train/batch_reward", reward.mean(), step)
+            log_dict["train/batch_reward"] = reward.mean().item()
 
-        self.update_critic(obs, action, reward, next_obs, not_done, L, step)
+        self.update_critic(obs, action, reward, next_obs, not_done, log_dict, step)
 
         if step % self.actor_update_freq == 0:
-            self.update_actor_and_alpha(obs, L, step)
+            self.update_actor_and_alpha(obs, log_dict, step)
 
         if step % self.critic_target_update_freq == 0:
             utils.soft_update_params(

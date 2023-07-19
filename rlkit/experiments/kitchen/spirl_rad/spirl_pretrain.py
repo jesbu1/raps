@@ -48,7 +48,6 @@ if __name__ == "__main__":
     parser.add_argument("--detach_encoder", default=False, action="store_true")
     # spirl
     parser.add_argument("--spirl_latent_dim", default=10, type=int)
-    parser.add_argument("--spirl_encoder_type", default="identity", type=str)
     parser.add_argument("--spirl_closed_loop", default=False, action="store_true")
     parser.add_argument("--spirl_architecture", default="rnn", type=str)
     parser.add_argument("--use_film", default=False, action="store_true")
@@ -78,8 +77,8 @@ if __name__ == "__main__":
         # action_repeat=1,
         num_eval_episodes=5,
         # init_steps=2500,
-        # pre_transform_image_size=64,
-        # image_size=64,
+        pre_transform_image_size=64,
+        image_size=64,
         env_name=None,  # will be replaced by the arg # slide-cabinet
         batch_size=128,  # 512 originally for online RL
         # eval_freq=1000,

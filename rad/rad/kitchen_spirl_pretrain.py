@@ -35,14 +35,13 @@ from rad.video import VideoRecorder
 
 def make_agent(
     obs_shape,
-    continuous_action_dim,
     discrete_action_dim,
     agent_kwargs,
     device,
 ):
     return SPiRLRadSacAgent(
         obs_shape=obs_shape,
-        continuous_action_dim=continuous_action_dim,
+        continuous_action_dim=agent_kwargs["spirl_latent_dim"],
         discrete_action_dim=discrete_action_dim,
         # env_action_dim=agent_kwargs["env_action_dim"],
         device=device,
@@ -63,8 +62,8 @@ def experiment(variant):
     # env_suite = variant["env_suite"]
     env_name = variant["env_name"]
     # env_kwargs = variant["env_kwargs"]
-    # pre_transform_image_size = variant["pre_transform_image_size"]
-    image_size = "state"  # variant["image_size"]
+    pre_transform_image_size = variant["pre_transform_image_size"]
+    image_size = variant["image_size"]
     frame_stack = variant["frame_stack"]
     batch_size = variant["batch_size"]
     num_train_epochs = variant["num_train_epochs"]  # new arg
@@ -154,7 +153,6 @@ def experiment(variant):
 
     agent = make_agent(
         obs_shape=obs_shape,
-        continuous_action_dim=continuous_action_dim,
         discrete_action_dim=discrete_action_dim,
         device=device,
         agent_kwargs=agent_kwargs,

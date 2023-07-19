@@ -210,7 +210,6 @@ def experiment(variant):
 
     agent = make_agent(
         obs_shape=obs_shape,
-        continuous_action_dim=continuous_action_dim,
         discrete_action_dim=discrete_action_dim,
         device=device,
         agent_kwargs=agent_kwargs,
