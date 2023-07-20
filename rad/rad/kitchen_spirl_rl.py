@@ -223,24 +223,14 @@ def experiment(variant):
 
     agent.train_spirl()  # not even necessary but just to be sure
     agent = agent.to(device)
-        epoch_log_dict = defaultdict(list)
-        epoch_start_time = time.time()
-        for step in range(int(len(spirl_dataset) / batch_size)):
-            log_dict = agent.spirl_update(spirl_dataset, step)
-            for k, v in log_dict.items():
-                epoch_log_dict[k].append(v)
-        epoch_end_time = time.time()
-        epoch_log_dict = {k: np.mean(v) for k, v in epoch_log_dict.items()}
-        epoch_log_dict["epoch"] = epoch
-        epoch_log_dict["time/epoch (s)"] = epoch_end_time - epoch_start_time
 
     # save the checkpoint
     agent.save_spirl(work_dir, num_train_epochs)
 
     episode, episode_reward, done = 0, 0, True
-    #start_time = time.time()
-    #epoch_start_time = time.time()
-    #train_expl_st = time.time()
+    # start_time = time.time()
+    # epoch_start_time = time.time()
+    # train_expl_st = time.time()
     total_train_expl_time = 0
     all_infos = []
     ep_infos = []
@@ -265,7 +255,7 @@ def experiment(variant):
             train_expl_st = time.time()
             log_dict.update(eval_log_data)
         if done:
-            log_dict["train/episode_reward"]= episode_reward
+            log_dict["train/episode_reward"] = episode_reward
             obs = expl_env.reset()
             done = False
             episode_reward = 0
@@ -279,13 +269,14 @@ def experiment(variant):
                 log_dict[f"train/{k}"] = v
 
             log_dict["trainer/num train calls"] = num_train_calls
-            wandb.log(log_dict, step=step)
+            mean_log_dict = {k: np.mean(v) for k, v in log_dict.items()}
+            wandb.log(mean_log_dict, step=step * frame_stack)
             log_dict = {}
 
         # sample action for data collection
-        #if step < init_steps:
+        # if step < init_steps:
         #    action = expl_env.action_space.sample()
-        #else:
+        # else:
 
         # TODO: take care of tracking current obs, next obs to add and the latent action
         with utils.eval_mode(agent):
