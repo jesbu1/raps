@@ -275,6 +275,11 @@ class SPiRLRadSacAgent(RadSacAgent, nn.Module):
         self.encoder_type = encoder_type
         self.data_augs = data_augs
 
+        if self.encoder_type == "identity":
+            encoder_feature_dim = obs_shape[
+                0
+            ]  # this is a hack to ensure that state space a
+
         self.augs_funcs = {}
 
         aug_to_func = {

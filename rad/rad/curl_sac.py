@@ -97,21 +97,17 @@ class Actor(nn.Module):
         self.discrete_continuous_dist = discrete_continuous_dist
         self.discrete_action_dim = discrete_action_dim
         if self.discrete_continuous_dist:
-            self.trunk = nn.Sequential(
-                nn.Linear(self.encoder.feature_dim, hidden_dim),
-                nn.ReLU(),
-                nn.Linear(hidden_dim, hidden_dim),
-                nn.ReLU(),
-                nn.Linear(hidden_dim, 2 * continuous_action_dim + discrete_action_dim),
-            )
+            output_dim = 2 * continuous_action_dim + discrete_action_dim
         else:
-            self.trunk = nn.Sequential(
-                nn.Linear(self.encoder.feature_dim, hidden_dim),
-                nn.ReLU(),
-                nn.Linear(hidden_dim, hidden_dim),
-                nn.ReLU(),
-                nn.Linear(hidden_dim, 2 * continuous_action_dim),
-            )
+            output_dim = 2 * continuous_action_dim
+        self.trunk = []
+        self.trunk.append(nn.Linear(encoder_feature_dim, hidden_dim))
+        self.trunk.append(nn.ReLU())
+        for _ in range(num_layers - 2):
+            self.trunk.append(nn.Linear(hidden_dim, hidden_dim))
+            self.trunk.append(nn.ReLU())
+        self.trunk.append(nn.Linear(hidden_dim, output_dim))
+        self.trunk = nn.Sequential(*self.trunk)
 
         self.outputs = dict()
         self.apply(weight_init)
