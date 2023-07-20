@@ -163,6 +163,7 @@ def experiment(variant):
     wandb.init(
         project="p-amazon-intern", config=variant, name=exp_name, group=run_group
     )
+    print(agent)
 
     # L = Logger(work_dir, use_tb=args.save_tb)
 

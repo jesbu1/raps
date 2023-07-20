@@ -17,7 +17,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--ckpt_load_dir", type=str, required=True)
     # misc
-    parser.add_argument("--exp_prefix", type=str, required=True)
+    # parser.add_argument("--exp_prefix", type=str, required=True)
     parser.add_argument("--run_group", type=str, required=True)
     parser.add_argument("--num_seeds", type=int, default=1)
     parser.add_argument("--mode", type=str, default="local")
@@ -40,7 +40,7 @@ if __name__ == "__main__":
     # encoder
     parser.add_argument("--encoder_feature_dim", default=50, type=int)
     parser.add_argument("--encoder_tau", default=0.05, type=float)
-    parser.add_argument("--num_layers", default=4, type=int)
+    parser.add_argument("--num_layers", default=5, type=int)
     parser.add_argument("--num_filters", default=32, type=int)
     parser.add_argument("--latent_dim", default=128, type=int)
     # sac
@@ -124,7 +124,7 @@ if __name__ == "__main__":
             variant["exp_id"] = exp_id
             run_experiment(
                 experiment,
-                exp_prefix=args.exp_prefix,
+                exp_prefix=args.run_group,
                 mode=args.mode,
                 variant=variant,
                 use_gpu=True,

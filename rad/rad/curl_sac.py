@@ -91,6 +91,11 @@ class Actor(nn.Module):
             output_logits=True,
         )
 
+        if encoder_type == "pixel":
+            num_linear_layers = 3
+        else:
+            num_linear_layers = num_layers
+
         self.log_std_min = log_std_min
         self.log_std_max = log_std_max
 
@@ -103,7 +108,7 @@ class Actor(nn.Module):
         self.trunk = []
         self.trunk.append(nn.Linear(encoder_feature_dim, hidden_dim))
         self.trunk.append(nn.ReLU())
-        for _ in range(num_layers - 2):
+        for _ in range(num_linear_layers - 2):
             self.trunk.append(nn.Linear(hidden_dim, hidden_dim))
             self.trunk.append(nn.ReLU())
         self.trunk.append(nn.Linear(hidden_dim, output_dim))
