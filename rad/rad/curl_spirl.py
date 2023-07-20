@@ -171,11 +171,26 @@ class ClosedLoopActionDecoder(nn.Module):
         hidden_dim,
         output_dim,
         num_linear_layers,
-        cl_encoder,
+        obs_encoder_type,
+        obs_shape,
+        obs_encoder_output_dim,
+        obs_encoder_num_layers,
+        obs_encoder_num_filters,
+        use_film,
+        film_input_dim=0,
     ):
         super().__init__()
-        self.cl_encoder = cl_encoder
-        self.obs_input_size = cl_encoder.feature_dim
+        self.encoder = make_encoder(
+            obs_encoder_type,
+            obs_shape,
+            obs_encoder_output_dim,
+            obs_encoder_num_layers,
+            obs_encoder_num_filters,
+            output_logits=True,
+            film=use_film,
+            film_input_dim=film_input_dim,
+        )
+        self.obs_input_size = self.encoder.feature_dim
         layers = []
         for i in range(num_linear_layers - 1):
             if i == 0:
@@ -186,7 +201,6 @@ class ClosedLoopActionDecoder(nn.Module):
             layers.append(nn.ReLU())
         layers.append(nn.Linear(hidden_dim, output_dim))
         self.linear = nn.Sequential(*layers)
-        self.cl_encoder = cl_encoder
 
     def forward(self, latents, obs, one_hot=None):
         # reshape obs as it's a sequence
@@ -198,7 +212,7 @@ class ClosedLoopActionDecoder(nn.Module):
         else:
             # state
             obs = obs.reshape((obs.shape[0] * obs.shape[1], obs.shape[2]))
-        obs = self.cl_encoder(obs, one_hot)
+        obs = self.encoder(obs, one_hot)
         original_shape = latents.shape
         latents = latents.reshape(
             (latents.shape[0] * latents.shape[1], latents.shape[2])
@@ -412,7 +426,12 @@ class SPiRLRadSacAgent(RadSacAgent, nn.Module):
                 hidden_dim,
                 env_action_dim,
                 num_linear_layers=num_layers,
-                cl_encoder=self.spirl_prior.encoder,
+                obs_encoder_type=encoder_type,
+                obs_shape=obs_shape,
+                obs_encoder_output_dim=encoder_feature_dim,
+                obs_encoder_num_layers=num_layers,
+                obs_encoder_num_filters=num_filters,
+                use_film=use_film,
             )
         else:
             self.spirl_decoder = ActionDecoder(
