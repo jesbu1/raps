@@ -227,7 +227,7 @@ def experiment(variant):
     # save the checkpoint
     agent.save_spirl(work_dir, num_train_epochs)
 
-    episode, episode_reward, done = 0, 0, True
+    episode, episode_reward, hl_reward_sum, done = 0, 0, 0, True
     # start_time = time.time()
     # epoch_start_time = time.time()
     # train_expl_st = time.time()
@@ -257,8 +257,10 @@ def experiment(variant):
         if done:
             log_dict["train/episode_reward"] = episode_reward
             obs = expl_env.reset()
+            hl_obs = obs
             done = False
             episode_reward = 0
+            hl_reward_sum = 0
             episode_step = 0
             episode += 1
             all_infos.append(ep_infos)
@@ -278,7 +280,6 @@ def experiment(variant):
         #    action = expl_env.action_space.sample()
         # else:
 
-        # TODO: take care of tracking current obs, next obs to add and the latent action
         with utils.eval_mode(agent):
             action = agent.sample_action(obs)
 
@@ -297,7 +298,14 @@ def experiment(variant):
             0 if episode_step + 1 == expl_env._max_episode_steps else float(done)
         )
         episode_reward += reward
-        replay_buffer.add(obs, action, reward, next_obs, done_bool)
+        hl_reward_sum += reward
+        if agent.sampled_new_action or done_bool:
+            hl_policy_action = agent.current_latent.detach().cpu().numpy().flatten()
+            replay_buffer.add(
+                hl_obs, hl_policy_action, hl_reward_sum, next_obs, done_bool
+            )
+            hl_obs = next_obs
+            hl_reward_sum = 0
 
         obs = next_obs
         episode_step += 1

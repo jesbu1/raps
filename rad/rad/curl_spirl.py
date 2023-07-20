@@ -608,6 +608,7 @@ class SPiRLRadSacAgent(RadSacAgent, nn.Module):
         self.current_action_trajs = []
         self.current_action_horizon = 0
         self.current_latent = None
+        self.sampled_new_action = False
 
     def get_deterministic_action_from_decoder(self, input_obs, sample_hl_action):
         # TODO: handle one-hot case
@@ -633,6 +634,9 @@ class SPiRLRadSacAgent(RadSacAgent, nn.Module):
                         obs, compute_pi=False, compute_log_pi=False
                     )
                     self.current_latent = mu
+                self.sampled_new_action = True
+            else:
+                self.sampled_new_action = False
 
         if obs.shape[-1] != self.image_size and self.encoder_type == "pixel":
             obs = utils.center_crop_image(obs, self.image_size)

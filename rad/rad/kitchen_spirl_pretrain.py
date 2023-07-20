@@ -38,7 +38,7 @@ def make_agent(
     discrete_action_dim,
     agent_kwargs,
     device,
-):
+) -> SPiRLRadSacAgent:
     return SPiRLRadSacAgent(
         obs_shape=obs_shape,
         continuous_action_dim=agent_kwargs["spirl_latent_dim"],
