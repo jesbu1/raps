@@ -70,7 +70,6 @@ INIT_QPOS = np.array(
 
 
 class KitchenV0(robot_env.RobotEnv):
-
     CALIBRATION_PATHS = {
         "default": os.path.join(os.path.dirname(__file__), "robot/franka_config.xml")
     }
@@ -127,6 +126,15 @@ class KitchenV0(robot_env.RobotEnv):
     )
     N_DOF_ROBOT = 9
     N_DOF_OBJECT = 21
+
+    def reset_model_state(self, init_state):
+        self.robot_noise_ratio = 0
+        # for generating video demonstrations
+        reset_pos = init_state[:30].copy()
+        reset_vel = init_state[30:-1].copy()
+        self.robot.reset(self, reset_pos, reset_vel)
+        self.goal = self._get_task_goal()
+        return self._get_obs()
 
     def __init__(
         self,
