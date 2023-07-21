@@ -661,8 +661,8 @@ class SPiRLRadSacAgent(RadSacAgent, nn.Module):
                 obs = obs.unsqueeze(0)
             ac = (
                 self.spirl_decoder(
-                    self.current_latent,
-                    obs,
+                    self.current_latent.unsqueeze(1),
+                    obs.unsqueeze(1),
                 )
                 .squeeze(0)
                 .detach()

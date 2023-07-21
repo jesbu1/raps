@@ -141,7 +141,7 @@ def experiment(variant):
     num_train_steps = variant["num_train_steps"]
     num_eval_episodes = variant["num_eval_episodes"]
     eval_freq = variant["eval_freq"]
-    init_steps = 100  # variant["init_steps"]
+    init_steps = variant["init_steps"]
     pre_transform_image_size = (
         pre_transform_image_size if "crop" in data_augs else image_size
     )
@@ -262,7 +262,6 @@ def experiment(variant):
             )
             agent.save(work_dir, step)
             replay_buffer.save(buffer_dir)
-            train_expl_st = time.time()
             log_dict.update(eval_log_data)
         if done:
             log_dict["train/episode_reward"] = episode_reward
