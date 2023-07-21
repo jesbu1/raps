@@ -1,5 +1,6 @@
 import argparse
 import random
+import sys
 import subprocess
 
 import rlkit.util.hyperparameter as hyp
@@ -103,6 +104,9 @@ if __name__ == "__main__":
         # use_raw_actions=True,
         env_suite="kitchen",
     )
+    # convert command input list to string
+    command_str = " ".join(sys.argv)
+    variant["command_str"] = command_str
 
     search_space = {
         "agent_kwargs.data_augs": [

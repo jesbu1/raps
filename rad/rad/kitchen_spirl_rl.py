@@ -96,7 +96,7 @@ def evaluate(
             all_infos.append(ep_infos)
             if record_video:
                 all_frames["episode_%d" % i] = wandb.Video(
-                    np.transpose(np.stack(frames), (0, 3, 1, 2)), fps=10, format="mp4"
+                    np.transpose(np.stack(frames), (0, 3, 1, 2)), fps=30, format="mp4"
                 )
         eval_time = (time.time() - start_time) // num_episodes
         mean_ep_reward = np.mean(all_ep_rewards)
