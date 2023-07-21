@@ -246,7 +246,7 @@ def experiment(variant):
     all_infos = []
     ep_infos = []
     num_train_calls = 0
-    log_dict = {}
+    log_dict = defaultdict(list)
     for step in trange(num_train_steps):
         # evaluate agent periodically
         if step % eval_freq == 0:
@@ -287,7 +287,7 @@ def experiment(variant):
                 else:
                     mean_log_dict[k] = v
             wandb.log(mean_log_dict, step=step * frame_stack)
-            log_dict = {}
+            log_dict = defaultdict(list)
 
         # sample action for data collection
         # if step < init_steps:
@@ -304,6 +304,8 @@ def experiment(variant):
             for _ in range(num_updates):
                 agent.update(replay_buffer, training_log, step)
                 num_train_calls += 1
+        for k, v in training_log.items():
+            log_dict[k].append(v)
 
         next_obs, reward, done, info = expl_env.step(action)
         ep_infos.append(info)

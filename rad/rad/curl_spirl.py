@@ -499,8 +499,12 @@ class SPiRLRadSacAgent(RadSacAgent, nn.Module):
             critic_loss = F.mse_loss(current_Q1, target_Q) + F.mse_loss(
                 current_Q2, target_Q
             )
-            if step % self.log_interval == 0:
-                log_dict["train_critic/loss"] = critic_loss.item()
+            # if step % self.log_interval == 0:
+            log_dict["rl_training/critic_loss"] = critic_loss.item()
+            log_dict["rl_training/critic_target_Q"] = target_Q.mean().item()
+            log_dict["rl_training/critic_Q1"] = current_Q1.mean().item()
+            log_dict["rl_training/critic_Q2"] = current_Q2.mean().item()
+            log_dict["rl_training/critic_target_V"] = target_V.mean().item()
 
             # Optimize the critic
             self.critic_optimizer.zero_grad()
@@ -528,11 +532,11 @@ class SPiRLRadSacAgent(RadSacAgent, nn.Module):
             actor_loss = (self.alpha.detach() * prior_kl_divergence - actor_Q).mean()
 
             if step % self.log_interval == 0:
-                log_dict["train_actor/loss"] = actor_loss.item()
-                log_dict["train_actor/target_kl"] = self.target_kl
-                log_dict["train_actor/entropy"] = entropy.mean().item()
+                log_dict["rl_training/actor_loss"] = actor_loss.item()
+                log_dict["rl_training/actor_target_kl"] = self.target_kl
+                log_dict["rl_training/actor_entropy"] = entropy.mean().item()
                 log_dict[
-                    "train_actor/prior_kl_divergence"
+                    "rl_training/actor_prior_kl_divergence"
                 ] = prior_kl_divergence.mean().item()
 
             # optimize the actor
@@ -545,8 +549,8 @@ class SPiRLRadSacAgent(RadSacAgent, nn.Module):
             self.log_alpha_optimizer.zero_grad()
             alpha_loss = (self.alpha * (-log_pi - self.target_kl).detach()).mean()
             if step % self.log_interval == 0:
-                log_dict["train_alpha/loss"] = alpha_loss.item()
-                log_dict["train_alpha/value"] = self.alpha.item()
+                log_dict["rl_training/alpha_loss"] = alpha_loss.item()
+                log_dict["rl_training/train_alpha_value"] = self.alpha.item()
             self.grad_scaler.scale(alpha_loss).backward()
             self.grad_scaler.step(self.log_alpha_optimizer)
             self.grad_scaler.update()
@@ -697,8 +701,8 @@ class SPiRLRadSacAgent(RadSacAgent, nn.Module):
         else:
             obs, action, reward, next_obs, not_done = replay_buffer.sample_proprio()
 
-        if step % self.log_interval == 0:
-            log_dict["train/batch_reward"] = reward.mean().item()
+        #if step % self.log_interval == 0:
+        log_dict["rl_training/batch_reward"] = reward.mean().item()
 
         self.update_critic(obs, action, reward, next_obs, not_done, log_dict, step)
 
