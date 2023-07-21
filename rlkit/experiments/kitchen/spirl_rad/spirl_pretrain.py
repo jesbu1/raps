@@ -132,4 +132,5 @@ if __name__ == "__main__":
                 )[:-1],
                 seed=seed,
                 exp_id=exp_id,
+                prepend_date_to_exp_prefix=False,
             )

@@ -114,7 +114,7 @@ def experiment(variant):
         + "-"
         + encoder_type
     )
-    work_dir = work_dir + "/" + exp_name
+    work_dir = os.path.join(work_dir, exp_name)
 
     utils.make_dir(work_dir)
     # video_dir = utils.make_dir(os.path.join(work_dir, "video"))

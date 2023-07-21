@@ -20,4 +20,5 @@ ALL_KITCHEN_ENVIRONMENTS = {
     "light_switch": KitchenLightSwitchV0,
     "microwave_kettle_light_top_left_burner": KitchenMicrowaveKettleLightTopLeftBurnerV0,
     "hinge_slide_bottom_left_burner_light": KitchenHingeSlideBottomLeftBurnerLightV0,
+    "kitchen-mixed-v0": KitchenMicrowaveKettleBottomBurnerLightV0,
 }

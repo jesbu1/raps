@@ -352,7 +352,7 @@ class SPiRLRadSacAgent(RadSacAgent, nn.Module):
         # tie encoders between actor and critic, and CURL and critic
         self.actor.encoder.copy_conv_weights_from(self.critic.encoder)
 
-        self.log_alpha = torch.tensor(np.log(init_temperature))
+        self.log_alpha = nn.Parameter(torch.tensor(np.log(init_temperature)))
         self.log_alpha.requires_grad = True
         # set target entropy to -|A|
         # self.target_entropy = -np.prod(continuous_action_dim + discrete_action_dim)
@@ -459,6 +459,7 @@ class SPiRLRadSacAgent(RadSacAgent, nn.Module):
 
         # TODO: discount according to variable length skills
         # TODO: freeze the closed loop decoder's encoder maybe? prob not
+        self.reset()
 
     def train(self, training=True):
         self.training = training
@@ -475,10 +476,14 @@ class SPiRLRadSacAgent(RadSacAgent, nn.Module):
     def update_critic(self, obs, action, reward, next_obs, not_done, log_dict, step):
         with torch.cuda.amp.autocast(enabled=self.use_amp):
             with torch.no_grad():
-                _, policy_action, _, log_std = self.actor(next_obs, compute_pi=False)
-                prior_mu, prior_log_std = self.spirl_prior(next_obs)
+                policy_mu, policy_action, _, log_std = self.actor(
+                    next_obs, compute_log_pi=False
+                )
+                prior_mu, _, _, prior_log_std = self.spirl_prior(
+                    next_obs, compute_log_pi=False
+                )
                 divergence_from_prior = utils.gaussian_kl_divergence(
-                    policy_action, log_std, prior_mu, prior_log_std
+                    policy_mu, log_std, prior_mu, prior_log_std
                 )
 
                 target_Q1, target_Q2 = self.critic_target(next_obs, policy_action)
@@ -501,6 +506,7 @@ class SPiRLRadSacAgent(RadSacAgent, nn.Module):
             self.critic_optimizer.zero_grad()
             self.grad_scaler.scale(critic_loss).backward()
             self.grad_scaler.step(self.critic_optimizer)
+            self.grad_scaler.update()
 
     def update_actor_and_alpha(self, obs, log_dict, step):
         with torch.cuda.amp.autocast(enabled=self.use_amp):
@@ -508,26 +514,32 @@ class SPiRLRadSacAgent(RadSacAgent, nn.Module):
             _, pi, log_pi, log_std = self.actor(obs, detach_encoder=True)
             actor_Q1, actor_Q2 = self.critic(obs, pi, detach_encoder=True)
             with torch.no_grad():
-                prior_mu, prior_log_std = self.spirl_prior(obs)
-                prior_kl_divergence = utils.gaussian_kl_divergence(
-                    pi, log_std, prior_mu, prior_log_std
+                prior_mu, _, _, prior_log_std = self.spirl_prior(
+                    obs, compute_log_pi=False
                 )
                 entropy = 0.5 * log_std.shape[1] * (
                     1.0 + np.log(2 * np.pi)
                 ) + log_std.sum(dim=-1)
+            prior_kl_divergence = utils.gaussian_kl_divergence(
+                pi, log_std, prior_mu, prior_log_std
+            )
 
             actor_Q = torch.min(actor_Q1, actor_Q2)
             actor_loss = (self.alpha.detach() * prior_kl_divergence - actor_Q).mean()
 
             if step % self.log_interval == 0:
                 log_dict["train_actor/loss"] = actor_loss.item()
-                log_dict["train_actor/target_entropy"] = self.target_kl
+                log_dict["train_actor/target_kl"] = self.target_kl
                 log_dict["train_actor/entropy"] = entropy.mean().item()
+                log_dict[
+                    "train_actor/prior_kl_divergence"
+                ] = prior_kl_divergence.mean().item()
 
             # optimize the actor
             self.actor_optimizer.zero_grad()
             self.grad_scaler.scale(actor_loss).backward()
             self.grad_scaler.step(self.actor_optimizer)
+            self.grad_scaler.update()
 
             # optimize the KL div regularization coef alpha
             self.log_alpha_optimizer.zero_grad()
@@ -537,6 +549,7 @@ class SPiRLRadSacAgent(RadSacAgent, nn.Module):
                 log_dict["train_alpha/value"] = self.alpha.item()
             self.grad_scaler.scale(alpha_loss).backward()
             self.grad_scaler.step(self.log_alpha_optimizer)
+            self.grad_scaler.update()
 
     def spirl_update(self, replay_buffer, step):
         # TODO: integrate a multi-skill spirl version (not yet) as I need to first test straightforward spirl
@@ -616,6 +629,8 @@ class SPiRLRadSacAgent(RadSacAgent, nn.Module):
         with torch.no_grad():
             if self.encoder_type == "pixel":
                 obs = input_obs / 255.0
+            else:
+                obs = input_obs
             # now get action from LL policy (spirl decoder)
             self.current_action_horizon += 1
             if self.current_action_horizon == self.spirl_action_horizon:
@@ -644,9 +659,16 @@ class SPiRLRadSacAgent(RadSacAgent, nn.Module):
             if isinstance(obs, np.ndarray):
                 obs = torch.FloatTensor(obs).to(self.device)
                 obs = obs.unsqueeze(0)
-            ac = self.spirl_decoder(
-                self.current_latent,
-                obs,
+            ac = (
+                self.spirl_decoder(
+                    self.current_latent,
+                    obs,
+                )
+                .squeeze(0)
+                .detach()
+                .cpu()
+                .numpy()
+                .flatten()
             )
         else:
             if len(self.current_action_trajs) == 0:
@@ -655,9 +677,11 @@ class SPiRLRadSacAgent(RadSacAgent, nn.Module):
                     -1, self.spirl_action_horizon, -1
                 )
                 ac_traj = self.spirl_decoder(repeated_latent)
-                self.current_action_trajs = ac_traj.squeeze(0)
-            ac = self.current_action_trajs.pop(0)
-        return ac.cpu().numpy().flatten()
+                self.current_action_trajs = list(
+                    ac_traj.squeeze(0).detach().cpu().numpy()
+                )
+            ac = self.current_action_trajs.pop(0).flatten()
+        return ac
 
     def select_action(self, obs):
         return self.get_deterministic_action_from_decoder(obs, sample_hl_action=False)
@@ -697,10 +721,12 @@ class SPiRLRadSacAgent(RadSacAgent, nn.Module):
         #    self.update_cpc(obs_anchor, obs_pos,cpc_kwargs, L, step)
 
     def save_curl(self, model_dir, step):
-        torch.save(self.CURL.state_dict(), "%s/curl_%s.pt" % (model_dir, step))
+        if hasattr(self, "CURL"):
+            torch.save(self.CURL.state_dict(), "%s/curl_%s.pt" % (model_dir, step))
 
     def load_curl(self, model_dir, step):
-        self.CURL.load_state_dict(torch.load("%s/curl_%s.pt" % (model_dir, step)))
+        if hasattr(self, "CURL"):
+            self.CURL.load_state_dict(torch.load("%s/curl_%s.pt" % (model_dir, step)))
 
     def load(self, model_dir):
         # check if actor or critic or curl checkpoints exist. if they do use them
@@ -720,6 +746,15 @@ class SPiRLRadSacAgent(RadSacAgent, nn.Module):
                 torch.load("%s/critic_target_%s.pt" % (model_dir, step))
             )
             self.load_curl(model_dir, step)
+            self.log_alpha = nn.Parameter(
+                torch.load("%s/log_alpha_%s.pt" % (model_dir, step))
+            )
+            self.log_alpha_optimizer.load_state_dict(
+                torch.load("%s/log_alpha_optim_%s.pt" % (model_dir, step))
+            )
+            self.actor_optimizer.load_state_dict(
+                torch.load("%s/actor_optim_%s.pt" % (model_dir, step))
+            )
         # latest spirl checkpoint
         all_spirl = [x for x in model_ckpts if "spirl" in x]
         all_spirl = sorted(
@@ -734,6 +769,14 @@ class SPiRLRadSacAgent(RadSacAgent, nn.Module):
         torch.save(
             self.critic_target.state_dict(),
             "%s/critic_target_%s.pt" % (model_dir, step),
+        )
+        torch.save(
+            self.log_alpha_optimizer.state_dict(),
+            "%s/log_alpha_optim_%s.pt" % (model_dir, step),
+        )
+        torch.save(
+            self.actor_optimizer.state_dict(),
+            "%s/actor_optim_%s.pt" % (model_dir, step),
         )
         self.save_curl(model_dir, step)
         self.save_spirl(model_dir, step)

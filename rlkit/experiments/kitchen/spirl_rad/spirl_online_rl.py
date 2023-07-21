@@ -7,7 +7,7 @@ from rlkit.launchers.launcher_util import run_experiment
 
 
 def experiment(variant):
-    from rad.kitchen_spirl_pretrain import experiment
+    from rad.kitchen_spirl_rl import experiment
 
     experiment(variant)
 
@@ -68,7 +68,7 @@ if __name__ == "__main__":
             use_amp=True,
             log_interval=50,
             env_action_dim=9,
-            discrete_continuous_dist=False,
+            # discrete_continuous_dist=False,
             target_prior_divergence=5.0,
             **vars(args),
         ),
@@ -83,7 +83,7 @@ if __name__ == "__main__":
         env_name="kitchen-mixed-v0",  # slide-cabinet
         batch_size=512,  # 512 originally for online RL
         eval_freq=10000,
-        log_interval=1000,
+        # log_interval=1000,
         env_kwargs=dict(
             dense=False,
             image_obs=False,
@@ -95,9 +95,9 @@ if __name__ == "__main__":
             usage_kwargs=dict(
                 use_dm_backend=True,
                 use_raw_action_wrappers=False,
-                use_image_obs=True,
+                use_image_obs=False,
                 max_path_length=280,
-                unflatten_images=True,
+                unflatten_images=False,  # should be true if use_image_obs is Tru
             ),
             image_kwargs=dict(),
         ),
@@ -134,4 +134,5 @@ if __name__ == "__main__":
                 )[:-1],
                 seed=seed,
                 exp_id=exp_id,
+                prepend_date_to_exp_prefix=False,
             )

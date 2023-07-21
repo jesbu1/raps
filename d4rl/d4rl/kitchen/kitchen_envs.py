@@ -2,6 +2,7 @@
 import numpy as np
 from d4rl.kitchen.adept_envs.franka.kitchen_multitask_v0 import KitchenTaskRelaxV1
 from d4rl.offline_env import OfflineEnv
+from collections import defaultdict
 
 OBS_ELEMENT_INDICES = {
     "bottom left burner": np.array([11, 12]),

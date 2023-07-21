@@ -34,6 +34,8 @@ from rad.video import VideoRecorder
 from rad.kitchen_train import compute_path_info
 from rad.kitchen_spirl_pretrain import make_agent
 
+render_imwidth, render_imheight = 256, 256
+
 
 def evaluate(
     env,
@@ -54,7 +56,13 @@ def evaluate(
             obs = env.reset()
             frames = []
             if record_video:
-                frames.append(env.render(mode="rgb_array"))
+                frames.append(
+                    env.render(
+                        mode="rgb_array",
+                        imwidth=render_imwidth,
+                        imheight=render_imheight,
+                    )
+                )
             done = False
             episode_reward = 0
             ep_infos = []
@@ -74,14 +82,22 @@ def evaluate(
                         action = agent.select_action(obs)
                 obs, reward, done, info = env.step(action)
                 if record_video:
-                    frames.append(env.render(mode="rgb_array"))
+                    frames.append(
+                        env.render(
+                            mode="rgb_array",
+                            imwidth=render_imwidth,
+                            imheight=render_imheight,
+                        )
+                    )
                 episode_reward += reward
                 ep_infos.append(info)
 
             all_ep_rewards.append(episode_reward)
             all_infos.append(ep_infos)
             if record_video:
-                all_frames["episode_%d" % i] = wandb.Video(frames, fps=4, format="mp4")
+                all_frames["episode_%d" % i] = wandb.Video(
+                    np.transpose(np.stack(frames), (0, 3, 1, 2)), fps=10, format="mp4"
+                )
         eval_time = (time.time() - start_time) // num_episodes
         mean_ep_reward = np.mean(all_ep_rewards)
         best_ep_reward = np.max(all_ep_rewards)
@@ -118,14 +134,14 @@ def experiment(variant):
     image_size = variant["image_size"]
     frame_stack = variant["frame_stack"]
     batch_size = variant["batch_size"]
-    num_train_epochs = variant["num_train_epochs"]  # new arg
+    spirl_latent_dim = variant["agent_kwargs"]["spirl_latent_dim"]
+    # num_train_epochs = variant["num_train_epochs"]  # new arg
     run_group = variant["run_group"]
     replay_buffer_capacity = variant["replay_buffer_capacity"]
     num_train_steps = variant["num_train_steps"]
     num_eval_episodes = variant["num_eval_episodes"]
     eval_freq = variant["eval_freq"]
-    init_steps = variant["init_steps"]
-    log_interval = variant["log_interval"]
+    init_steps = 100  # variant["init_steps"]
     pre_transform_image_size = (
         pre_transform_image_size if "crop" in data_augs else image_size
     )
@@ -165,13 +181,12 @@ def experiment(variant):
         + "-"
         + encoder_type
     )
-    work_dir = work_dir + "/" + exp_name
+    work_dir = os.path.join(work_dir, exp_name)
     utils.make_dir(work_dir)
     buffer_dir = utils.make_dir(os.path.join(work_dir, "buffer"))
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    continuous_action_dim = expl_env.action_space.low.size
     discrete_action_dim = 0
 
     if encoder_type == "pixel":
@@ -198,7 +213,7 @@ def experiment(variant):
 
     replay_buffer = utils.ReplayBuffer(
         obs_shape=pre_aug_obs_shape,
-        action_size=continuous_action_dim + discrete_action_dim,
+        action_size=spirl_latent_dim + discrete_action_dim,
         capacity=replay_buffer_capacity,
         batch_size=batch_size,
         device=device,
@@ -224,14 +239,10 @@ def experiment(variant):
     agent.train_spirl()  # not even necessary but just to be sure
     agent = agent.to(device)
 
-    # save the checkpoint
-    agent.save_spirl(work_dir, num_train_epochs)
-
     episode, episode_reward, hl_reward_sum, done = 0, 0, 0, True
     # start_time = time.time()
     # epoch_start_time = time.time()
     # train_expl_st = time.time()
-    total_train_expl_time = 0
     all_infos = []
     ep_infos = []
     num_train_calls = 0
@@ -239,7 +250,6 @@ def experiment(variant):
     for step in trange(num_train_steps):
         # evaluate agent periodically
         if step % eval_freq == 0:
-            total_train_expl_time += time.time() - train_expl_st
             eval_log_data = evaluate(
                 eval_env,
                 agent,
@@ -271,7 +281,12 @@ def experiment(variant):
                 log_dict[f"train/{k}"] = v
 
             log_dict["trainer/num train calls"] = num_train_calls
-            mean_log_dict = {k: np.mean(v) for k, v in log_dict.items()}
+            mean_log_dict = {}
+            for k, v in log_dict.items():
+                if not isinstance(v, wandb.Video):
+                    mean_log_dict[k] = np.mean(v)
+                else:
+                    mean_log_dict[k] = v
             wandb.log(mean_log_dict, step=step * frame_stack)
             log_dict = {}
 
