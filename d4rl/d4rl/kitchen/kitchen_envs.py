@@ -32,6 +32,7 @@ class KitchenBase(KitchenTaskRelaxV1, OfflineEnv):
     TASK_ELEMENTS = []
     REMOVE_TASKS_WHEN_COMPLETE = False
     TERMINATE_ON_TASK_COMPLETE = False
+    ENFORCE_TASK_ORDER = False
 
     def __init__(self, dense=True, **kwargs):
         self.tasks_to_complete = set(self.TASK_ELEMENTS)
@@ -96,6 +97,7 @@ class KitchenBase(KitchenTaskRelaxV1, OfflineEnv):
         idx_offset = len(next_q_obs)
         completions = []
         dense = 0
+        all_completed_so_far = True
         for element in self.tasks_to_complete:
             element_idx = OBS_ELEMENT_INDICES[element]
             distance = np.linalg.norm(
@@ -172,8 +174,9 @@ class KitchenBase(KitchenTaskRelaxV1, OfflineEnv):
                         if within_sphere_right and within_sphere_left:
                             is_grasped = True
             complete = distance < BONUS_THRESH and is_grasped
-            if complete:
+            if complete and (all_completed_so_far or not self.ENFORCE_TASK_ORDER):
                 completions.append(element)
+            all_completed_so_far = all_completed_so_far and complete
         if self.REMOVE_TASKS_WHEN_COMPLETE:
             [self.tasks_to_complete.remove(element) for element in completions]
         bonus = float(len(completions))
@@ -277,7 +280,15 @@ class KitchenLightSwitchV0(KitchenBase):
 # original D4RL envs below
 class KitchenMicrowaveKettleLightSliderV0(KitchenBase):
     TASK_ELEMENTS = ["microwave", "kettle", "light switch", "slide cabinet"]
+    REMOVE_TASKS_WHEN_COMPLETE = True
+    TERMINATE_ON_TASK_COMPLETE = True
+    TERMINATE_ON_WRONG_COMPLETE = False
+    ENFORCE_TASK_ORDER = True  # required for replicating SPiRL
 
 
 class KitchenMicrowaveKettleBottomBurnerLightV0(KitchenBase):
     TASK_ELEMENTS = ["microwave", "kettle", "bottom left burner", "light switch"]
+    REMOVE_TASKS_WHEN_COMPLETE = True
+    TERMINATE_ON_TASK_COMPLETE = True
+    TERMINATE_ON_WRONG_COMPLETE = False
+    ENFORCE_TASK_ORDER = True  # required for replicating SPiRL
