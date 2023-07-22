@@ -274,7 +274,7 @@ class D4RLSequenceSplitDataset(Dataset):
         obs_key = "observations" if not use_image else "rendered_frames"
         self.use_image = use_image
         print("Loading Data")
-        debug = True
+        debug = False
         if debug:
             seq_end_idxs = seq_end_idxs[:20]
         for end_idx in tqdm.tqdm(seq_end_idxs):

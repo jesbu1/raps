@@ -72,7 +72,7 @@ if __name__ == "__main__":
             env_action_dim=9,
             **vars(args),
         ),
-        num_train_epochs=10000,
+        num_train_epochs=1000,
         frame_stack=4,
         # replay_buffer_capacity=int(2.5e6),
         # action_repeat=1,
