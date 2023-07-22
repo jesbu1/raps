@@ -1,4 +1,5 @@
 from collections import defaultdict
+import h5py
 from tqdm import trange
 import wandb
 
@@ -61,6 +62,7 @@ def experiment(variant):
 
     # env_suite = variant["env_suite"]
     env_name = variant["env_name"]
+    use_image = variant["use_image"]
     # env_kwargs = variant["env_kwargs"]
     pre_transform_image_size = variant["pre_transform_image_size"]
     image_size = variant["image_size"]
@@ -94,7 +96,11 @@ def experiment(variant):
     #    env_kwargs["image_kwargs"]["imwidth"] = pre_transform_image_size
     #    env_kwargs["image_kwargs"]["imheight"] = pre_transform_image_size
     env = gym.make(env_name)
-    d4rl_dataset = env.get_dataset()
+    if use_image:
+        dataset_file = variant["dataset_file"]
+        d4rl_dataset = h5py.File(dataset_file, "r")
+    else:
+        d4rl_dataset = env.get_dataset()
 
     # make directory
     ts = time.gmtime()
@@ -141,8 +147,6 @@ def experiment(variant):
     else:
         obs_shape = env.observation_space.shape
         pre_aug_obs_shape = obs_shape
-
-    d4rl_dataset = env.get_dataset()
 
     spirl_dataset = utils.D4RLSequenceSplitDataset(
         batch_size=batch_size,

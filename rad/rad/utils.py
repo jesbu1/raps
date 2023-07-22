@@ -8,7 +8,7 @@ import random
 from torch.utils.data import Dataset, DataLoader
 import time
 import itertools
-from skimage.util.shape import view_as_windows
+import torchvision
 from rlkit.data_management.simple_replay_buffer import SimpleReplayBuffer
 
 
@@ -253,6 +253,10 @@ class D4RLSequenceSplitDataset(Dataset):
         device,
         d4rl_dataset,
         skill_len=10,
+        use_image=False,
+        img_width=64,
+        img_height=64,
+        frame_stack=1,
     ):
         self.subseq_len = skill_len
         self.device = device
@@ -260,15 +264,31 @@ class D4RLSequenceSplitDataset(Dataset):
 
         self.dataset = d4rl_dataset
 
+        self.frame_stack = frame_stack
+
         # split dataset into sequences
         seq_end_idxs = np.where(self.dataset["terminals"])[0]
         start = 0
         self.seq_states = []
         self.seq_actions = []
+        obs_key = "observations" if not use_image else "rendered_frames"
         for end_idx in seq_end_idxs:
             if end_idx + 1 - start < self.subseq_len:
                 continue  # skip too short demos
-            self.seq_states.append(self.dataset["observations"][start : end_idx + 1])
+            if use_image:
+                self.seq_states.append(
+                    torch.from_numpy(
+                        self.dataset[obs_key][start : end_idx + 1]
+                    ).transpose((0, 3, 1, 2))
+                )
+                # reshape to img_width, img_height
+                self.seq_states[-1] = torchvision.transforms.functional.resize(
+                    self.seq_states[-1],
+                    (img_height, img_width),
+                )
+                self.seq_states[-1] = (self.seq_states[-1].float() / 255.0).numpy()
+            else:
+                self.seq_states.append(self.dataset[obs_key][start : end_idx + 1])
             self.seq_actions.append(self.dataset["actions"][start : end_idx + 1])
             start = end_idx + 1
 
@@ -313,12 +333,40 @@ class D4RLSequenceSplitDataset(Dataset):
             .astype(int)
             .transpose(1, 0)
         )
-        states = np.array(
-            [
-                self.seq_states[i][seq_range]
-                for i, seq_range in zip(indices, batch_state_indices)
-            ]
-        )
+        if self.frame_stack == 1:
+            states = np.array(
+                [
+                    self.seq_states[i][seq_range]
+                    for i, seq_range in zip(indices, batch_state_indices)
+                ]
+            )
+        else:
+            # naive for loop version
+            states = []
+            for i, seq_range in zip(indices, batch_state_indices):
+                non_stacked = self.seq_states[i][seq_range]
+                stacked = []
+                for j, non_stack in enumerate(non_stacked):
+                    if j + 1 < self.frame_stack:
+                        stack = non_stacked[0 : j + 1]
+                        stack = np.concatenate(stack, axis=0)
+                        repeated = np.tile(
+                            stack, (self.frame_stack - j, *[1 for _ in stack.shape[1:]])
+                        )
+                        stacked.append(np.concatenate([repeated, non_stacked], axis=0))
+                    else:
+                        stacked.append(non_stacked[j + 1 - self.frame_stack : j + 1])
+                stacked = np.stack(stacked, axis=0)
+                states.append(stacked)
+            ## create frame_stacked versions of the states as efficiently as possible
+            ## if there aren't enough frames to fill the frame stack (because the sequence starts earlier) then we fill it with repeats
+            # states = []
+            # stacked_batch_state_indices = np.tile( # might need to use an expand here
+            #    batch_state_indices, (1, self.frame_stack + 1)
+            # )
+            # stacked_batch_state_indices[:, 1:] -= np.arange(self.frame_stack) + 1
+            # for i, seq_range in zip(indices, stacked_batch_state_indices):
+
         actions = np.array(
             [
                 self.seq_actions[i][seq_range]

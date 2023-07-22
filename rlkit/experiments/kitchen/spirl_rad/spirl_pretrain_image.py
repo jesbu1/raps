@@ -17,6 +17,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     # misc
     # parser.add_argument("--exp_prefix", type=str, required=True)
+    parser.add_argument("--dataset_file", type=str, required=True)
     parser.add_argument("--run_group", type=str, required=True)
     parser.add_argument("--num_seeds", type=int, default=1)
     parser.add_argument("--mode", type=str, default="local")
@@ -72,13 +73,13 @@ if __name__ == "__main__":
             **vars(args),
         ),
         num_train_epochs=50000,
-        frame_stack=1,
-        use_image=False,
+        frame_stack=4,
         # replay_buffer_capacity=int(2.5e6),
         # action_repeat=1,
         num_eval_episodes=5,
         # init_steps=2500,
         pre_transform_image_size=64,
+        use_image=True,
         image_size=64,
         env_name=None,  # will be replaced by the arg # slide-cabinet
         batch_size=128,  # 512 originally for online RL
@@ -108,6 +109,7 @@ if __name__ == "__main__":
     # convert command input list to string
     command_str = " ".join(sys.argv)
     variant["command_str"] = command_str
+    variant["dataset_file"] = args.dataset_file
 
     search_space = {
         "agent_kwargs.data_augs": [

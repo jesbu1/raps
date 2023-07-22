@@ -78,12 +78,12 @@ if __name__ == "__main__":
         action_repeat=1,
         num_eval_episodes=5,
         num_train_steps=int(1e6),
-        init_steps=2500,
+        init_steps=50000,
         pre_transform_image_size=64,
         image_size=64,
         env_name="kitchen-mixed-v0",  # slide-cabinet
-        batch_size=512,  # 512 originally for online RL
-        eval_freq=10000,
+        batch_size=128,  # 512 originally for online RL
+        eval_freq=50000,
         # log_interval=1000,
         env_kwargs=dict(
             dense=False,
@@ -91,8 +91,8 @@ if __name__ == "__main__":
             action_scale=1,
             control_mode="joint_velocity",  # default joint velocity control
             frame_skip=40,  # default for D4RL kitchen
-            imwidth=84,
-            imheight=84,
+            imwidth=64,
+            imheight=64,
             usage_kwargs=dict(
                 use_dm_backend=True,
                 use_raw_action_wrappers=False,

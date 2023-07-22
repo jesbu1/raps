@@ -531,13 +531,13 @@ class SPiRLRadSacAgent(RadSacAgent, nn.Module):
             actor_Q = torch.min(actor_Q1, actor_Q2)
             actor_loss = (self.alpha.detach() * prior_kl_divergence - actor_Q).mean()
 
-            if step % self.log_interval == 0:
-                log_dict["rl_training/actor_loss"] = actor_loss.item()
-                log_dict["rl_training/actor_target_kl"] = self.target_kl
-                log_dict["rl_training/actor_entropy"] = entropy.mean().item()
-                log_dict[
-                    "rl_training/actor_prior_kl_divergence"
-                ] = prior_kl_divergence.mean().item()
+            #if step % self.log_interval == 0:
+            log_dict["rl_training/actor_loss"] = actor_loss.item()
+            log_dict["rl_training/actor_target_kl"] = self.target_kl
+            log_dict["rl_training/actor_entropy"] = entropy.mean().item()
+            log_dict[
+                "rl_training/actor_prior_kl_divergence"
+            ] = prior_kl_divergence.mean().item()
 
             # optimize the actor
             self.actor_optimizer.zero_grad()
@@ -548,9 +548,9 @@ class SPiRLRadSacAgent(RadSacAgent, nn.Module):
             # optimize the KL div regularization coef alpha
             self.log_alpha_optimizer.zero_grad()
             alpha_loss = (self.alpha * (-log_pi - self.target_kl).detach()).mean()
-            if step % self.log_interval == 0:
-                log_dict["rl_training/alpha_loss"] = alpha_loss.item()
-                log_dict["rl_training/train_alpha_value"] = self.alpha.item()
+            #if step % self.log_interval == 0:
+            log_dict["rl_training/alpha_loss"] = alpha_loss.item()
+            log_dict["rl_training/train_alpha_value"] = self.alpha.item()
             self.grad_scaler.scale(alpha_loss).backward()
             self.grad_scaler.step(self.log_alpha_optimizer)
             self.grad_scaler.update()
