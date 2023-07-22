@@ -78,12 +78,12 @@ if __name__ == "__main__":
         action_repeat=1,
         num_eval_episodes=5,
         num_train_steps=int(1e6),
-        init_steps=50000,
+        init_steps=5000,
         pre_transform_image_size=64,
         image_size=64,
         env_name="kitchen-mixed-v0",  # slide-cabinet
         batch_size=128,  # 512 originally for online RL
-        eval_freq=50000,
+        eval_freq=5000,
         # log_interval=1000,
         env_kwargs=dict(
             dense=False,

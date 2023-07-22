@@ -36,15 +36,18 @@ def gaussian_logprob(noise, log_std):
     return residual - 0.5 * np.log(2 * np.pi) * noise.size(-1)
 
 
-def squash(mu, pi, log_pi):
+def squash(mu, pi, log_pi, max_range=1):
     """Apply squashing function.
     See appendix C from https://arxiv.org/pdf/1812.05905.pdf.
     """
-    mu = torch.tanh(mu)
-    if pi is not None:
-        pi = torch.tanh(pi)
+    mu = torch.tanh(mu) * max_range
     if log_pi is not None:
-        log_pi -= torch.log(F.relu(1 - pi.pow(2)) + 1e-6).sum(-1, keepdim=True)
+        # log_pi -= torch.log(F.relu(1 - pi.pow(2)) + 1e-6).sum(-1, keepdim=True)
+        log_pi -= torch.log(max_range) + 2 * (
+            torch.log(2.0) - pi - F.softplus(-2.0 * pi)
+        ).sum(-1, keepdim=True)
+    if pi is not None:
+        pi = torch.tanh(pi) * max_range
     return mu, pi, log_pi
 
 
