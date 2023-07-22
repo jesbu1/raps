@@ -268,6 +268,7 @@ class SPiRLRadSacAgent(RadSacAgent, nn.Module):
         spirl_beta=0.1,
         spirl_action_horizon=10,
         target_prior_divergence=5.0,
+        max_action_range=2.0,
         # checkpoint loading
         ckpt_load_dir=None,
         **kwargs
@@ -325,6 +326,7 @@ class SPiRLRadSacAgent(RadSacAgent, nn.Module):
             discrete_continuous_dist,
             continuous_action_dim,
             discrete_action_dim,
+            max_action_range=max_action_range,
         )
 
         self.critic = Critic(
@@ -480,7 +482,7 @@ class SPiRLRadSacAgent(RadSacAgent, nn.Module):
                     next_obs, compute_log_pi=False
                 )
                 prior_mu, _, _, prior_log_std = self.spirl_prior(
-                    next_obs, compute_log_pi=False
+                    next_obs, compute_log_pi=False, squash_output=False
                 )
                 divergence_from_prior = utils.gaussian_kl_divergence(
                     policy_mu, log_std, prior_mu, prior_log_std
@@ -519,7 +521,7 @@ class SPiRLRadSacAgent(RadSacAgent, nn.Module):
             actor_Q1, actor_Q2 = self.critic(obs, pi, detach_encoder=True)
             with torch.no_grad():
                 prior_mu, _, _, prior_log_std = self.spirl_prior(
-                    obs, compute_log_pi=False
+                    obs, compute_log_pi=False, squash_output=False
                 )
                 entropy = 0.5 * log_std.shape[1] * (
                     1.0 + np.log(2 * np.pi)
@@ -531,7 +533,7 @@ class SPiRLRadSacAgent(RadSacAgent, nn.Module):
             actor_Q = torch.min(actor_Q1, actor_Q2)
             actor_loss = (self.alpha.detach() * prior_kl_divergence - actor_Q).mean()
 
-            #if step % self.log_interval == 0:
+            # if step % self.log_interval == 0:
             log_dict["rl_training/actor_loss"] = actor_loss.item()
             log_dict["rl_training/actor_target_kl"] = self.target_kl
             log_dict["rl_training/actor_entropy"] = entropy.mean().item()
@@ -548,7 +550,7 @@ class SPiRLRadSacAgent(RadSacAgent, nn.Module):
             # optimize the KL div regularization coef alpha
             self.log_alpha_optimizer.zero_grad()
             alpha_loss = (self.alpha * (-log_pi - self.target_kl).detach()).mean()
-            #if step % self.log_interval == 0:
+            # if step % self.log_interval == 0:
             log_dict["rl_training/alpha_loss"] = alpha_loss.item()
             log_dict["rl_training/train_alpha_value"] = self.alpha.item()
             self.grad_scaler.scale(alpha_loss).backward()
@@ -564,7 +566,10 @@ class SPiRLRadSacAgent(RadSacAgent, nn.Module):
             # select first obs for the prior
             first_obs = obs[:, 0]
             prior_mu, _, _, prior_log_std = self.spirl_prior(
-                first_obs, compute_pi=False, compute_log_pi=False
+                first_obs,
+                compute_pi=False,
+                compute_log_pi=False,
+                squash_output=False,
             )
 
             # compute posterior
@@ -701,7 +706,7 @@ class SPiRLRadSacAgent(RadSacAgent, nn.Module):
         else:
             obs, action, reward, next_obs, not_done = replay_buffer.sample_proprio()
 
-        #if step % self.log_interval == 0:
+        # if step % self.log_interval == 0:
         log_dict["rl_training/batch_reward"] = reward.mean().item()
 
         self.update_critic(obs, action, reward, next_obs, not_done, log_dict, step)

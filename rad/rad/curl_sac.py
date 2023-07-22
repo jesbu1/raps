@@ -82,6 +82,7 @@ class Actor(nn.Module):
         discrete_continuous_dist=False,
         continuous_action_dim=14,
         discrete_action_dim=12,
+        max_action_range=1.0,
     ):
         super().__init__()
 
@@ -116,11 +117,19 @@ class Actor(nn.Module):
             self.trunk.append(nn.ReLU())
         self.trunk.append(nn.Linear(hidden_dim, output_dim))
         self.trunk = nn.Sequential(*self.trunk)
+        self.max_action_range = max_action_range
 
         self.outputs = dict()
         self.apply(weight_init)
 
-    def forward(self, obs, compute_pi=True, compute_log_pi=True, detach_encoder=False):
+    def forward(
+        self,
+        obs,
+        compute_pi=True,
+        compute_log_pi=True,
+        detach_encoder=False,
+        squash_output=True,
+    ):
         obs = self.encoder(obs, detach=detach_encoder)
         trunk = self.trunk(obs)
         if self.discrete_continuous_dist:
@@ -154,7 +163,8 @@ class Actor(nn.Module):
         else:
             log_pi = None
 
-        mu, pi, log_pi = squash(mu, pi, log_pi)
+        if squash_output:
+            mu, pi, log_pi = squash(mu, pi, log_pi, self.max_action_range)
 
         if self.discrete_continuous_dist:
             m = dist.mode()

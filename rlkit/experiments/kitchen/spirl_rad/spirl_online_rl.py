@@ -69,6 +69,7 @@ if __name__ == "__main__":
             use_amp=True,
             log_interval=50,
             env_action_dim=9,
+            max_action_range=2.0,  # max action range for the HL policy
             # discrete_continuous_dist=False,
             target_prior_divergence=5.0,
             **vars(args),
