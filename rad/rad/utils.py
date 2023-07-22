@@ -9,7 +9,7 @@ from torch.utils.data import Dataset, DataLoader
 import time
 import itertools
 import torchvision
-from rlkit.data_management.simple_replay_buffer import SimpleReplayBuffer
+import tqdm
 
 
 class eval_mode(object):
@@ -272,29 +272,34 @@ class D4RLSequenceSplitDataset(Dataset):
         self.seq_states = []
         self.seq_actions = []
         obs_key = "observations" if not use_image else "rendered_frames"
-        for end_idx in seq_end_idxs:
+        self.use_image = use_image
+        print("Loading Data")
+        debug = True
+        if debug:
+            seq_end_idxs = seq_end_idxs[:20]
+        for end_idx in tqdm.tqdm(seq_end_idxs):
             if end_idx + 1 - start < self.subseq_len:
                 continue  # skip too short demos
             if use_image:
                 self.seq_states.append(
                     torch.from_numpy(
                         self.dataset[obs_key][start : end_idx + 1]
-                    ).transpose((0, 3, 1, 2))
+                    ).permute(0, 3, 1, 2)
                 )
                 # reshape to img_width, img_height
                 self.seq_states[-1] = torchvision.transforms.functional.resize(
                     self.seq_states[-1],
                     (img_height, img_width),
+                    antialias=True,
                 )
-                self.seq_states[-1] = (self.seq_states[-1].float() / 255.0).numpy()
+                # self.seq_states[-1] = (self.seq_states[-1].float() / 255.0).numpy()
             else:
                 self.seq_states.append(self.dataset[obs_key][start : end_idx + 1])
             self.seq_actions.append(self.dataset["actions"][start : end_idx + 1])
             start = end_idx + 1
 
-        # convert to numpy arrays so we can do batched indexing
-        self.seq_states = np.array(self.seq_states)
-        self.seq_actions = np.array(self.seq_actions)
+        self.seq_states = self.seq_states
+        self.seq_actions = self.seq_actions
 
         self.seq_lens = np.array([len(seq) for seq in self.seq_states]).astype(int)
         self.batch_size_arange = np.arange(self.batch_size).astype(int)
@@ -303,6 +308,44 @@ class D4RLSequenceSplitDataset(Dataset):
 
         self.start = 0
         self.end = self.n_seqs
+
+        stacked = []
+        if self.frame_stack > 1:
+            # make a new seq_states that pre-stacks the frames
+            print("Stacking Frames")
+            for seq in tqdm.tqdm(self.seq_states):
+                new_seq = []
+                for j in range(len(seq)):
+                    if j + 1 < self.frame_stack:
+                        stack = seq[: j + 1]
+                        repeated = np.tile(
+                            stack[0:1],
+                            (
+                                self.frame_stack - j - 1,
+                                *[1 for _ in stack.shape[1:]],
+                            ),
+                        )
+                        new_seq.append(
+                            np.concatenate(
+                                np.concatenate(
+                                    [
+                                        repeated,
+                                        stack,
+                                        # non_stacked[: j + 1],
+                                    ],
+                                    axis=0,
+                                )
+                            )
+                        )
+                    else:
+                        new_seq.append(
+                            seq[j + 1 - self.frame_stack : j + 1].reshape(
+                                -1, *seq.shape[2:]
+                            )
+                        )
+                    assert new_seq[-1].shape[0] == self.frame_stack * seq.shape[1]
+                stacked.append(np.stack(new_seq, axis=0))
+        self.seq_states = stacked
 
     def get_batch(self):
         indices = np.random.choice(
@@ -333,39 +376,101 @@ class D4RLSequenceSplitDataset(Dataset):
             .astype(int)
             .transpose(1, 0)
         )
-        if self.frame_stack == 1:
-            states = np.array(
-                [
-                    self.seq_states[i][seq_range]
-                    for i, seq_range in zip(indices, batch_state_indices)
-                ]
-            )
-        else:
-            # naive for loop version
-            states = []
-            for i, seq_range in zip(indices, batch_state_indices):
-                non_stacked = self.seq_states[i][seq_range]
-                stacked = []
-                for j, non_stack in enumerate(non_stacked):
-                    if j + 1 < self.frame_stack:
-                        stack = non_stacked[0 : j + 1]
-                        stack = np.concatenate(stack, axis=0)
-                        repeated = np.tile(
-                            stack, (self.frame_stack - j, *[1 for _ in stack.shape[1:]])
-                        )
-                        stacked.append(np.concatenate([repeated, non_stacked], axis=0))
-                    else:
-                        stacked.append(non_stacked[j + 1 - self.frame_stack : j + 1])
-                stacked = np.stack(stacked, axis=0)
-                states.append(stacked)
-            ## create frame_stacked versions of the states as efficiently as possible
-            ## if there aren't enough frames to fill the frame stack (because the sequence starts earlier) then we fill it with repeats
-            # states = []
-            # stacked_batch_state_indices = np.tile( # might need to use an expand here
-            #    batch_state_indices, (1, self.frame_stack + 1)
-            # )
-            # stacked_batch_state_indices[:, 1:] -= np.arange(self.frame_stack) + 1
-            # for i, seq_range in zip(indices, stacked_batch_state_indices):
+        # if self.frame_stack == 1:
+        states = np.array(
+            [
+                self.seq_states[i][seq_range]
+                for i, seq_range in zip(indices, batch_state_indices)
+            ]
+        )
+        if self.use_image:
+            states = states / 255.0
+        # else:
+        # naive for loop version
+        # states = []
+        # for i, seq_range in zip(indices, batch_state_indices):
+        #    non_stacked = self.seq_states[i][seq_range]
+        #    stacked = []
+        #    for j in range(len(non_stacked)):
+        #        if j + 1 < self.frame_stack:
+        #            stack = non_stacked[: j + 1]
+        #            repeated = np.tile(
+        #                stack[
+        #                    0:1
+        #                ],  # repeat the first thing the required number of times
+        #                (
+        #                    self.frame_stack - j - 1,
+        #                    *[1 for _ in stack.shape[1:]],
+        #                ),
+        #            )
+        #            # stack = np.concatenate(
+        #            #    [repeated, stack[1:]], axis=0
+        #            # )  # concatenates them together but still 4d
+        #            stacked.append(
+        #                np.concatenate(
+        #                    np.concatenate(
+        #                        [
+        #                            repeated,
+        #                            stack,
+        #                            # non_stacked[: j + 1],
+        #                        ],
+        #                        axis=0,
+        #                    )
+        #                )
+        #            )
+        #        else:
+        #            stacked.append(
+        #                np.concatenate(
+        #                    non_stacked[j + 1 - self.frame_stack : j + 1]
+        #                )
+        #            )
+        #    stacked = np.stack(stacked, axis=0)
+        #    states.append(stacked)
+        # states = np.stack(states, axis=0)
+        ## create frame_stacked versions of the states as efficiently as possible
+        # now just do the above but batched
+        # non_stacked = np.array(
+        #    [
+        #        self.seq_states[i][seq_range]
+        #        for i, seq_range in zip(indices, batch_state_indices)
+        #    ]
+        # )
+        # stacked = []
+        # batch_size = non_stacked.shape[0]
+        # num_channels = non_stacked.shape[2]  # could be 1 for states
+        # for j in range(non_stacked.shape[1]):
+        #    if j + 1 < self.frame_stack:
+        #        stack = non_stacked[:, : j + 1]
+        #        repeated = np.tile(
+        #            stack[:, 0:1],
+        #            (1, self.frame_stack - j - 1, *[1 for _ in stack.shape[2:]]),
+        #        )
+        #        # stack = np.concatenate(
+        #        #    [repeated, stack[:, 1:]], axis=1
+        #        # )  # concatenates them together but still 4d
+        #        stacked.append(
+        #            np.concatenate(
+        #                [
+        #                    repeated,
+        #                    stack,
+        #                    # non_stacked[:, : j + 1],
+        #                ],
+        #                axis=1,
+        #            ).reshape(
+        #                batch_size,
+        #                self.frame_stack * num_channels,
+        #                *[x for x in non_stacked.shape[3:]]
+        #            )
+        #        )
+        #    else:
+        #        stacked.append(
+        #            non_stacked[:, j + 1 - self.frame_stack : j + 1].reshape(
+        #                batch_size,
+        #                self.frame_stack * num_channels,
+        #                *[x for x in non_stacked.shape[3:]]
+        #            )
+        #        )
+        # states = np.stack(stacked, axis=1)
 
         actions = np.array(
             [
@@ -380,7 +485,7 @@ class D4RLSequenceSplitDataset(Dataset):
         #    self.batch_size_arange, batch_action_indices
         # ].to(self.device)
         assert states.shape[1] == actions.shape[1] + 1
-        states = torch.from_numpy(states).to(self.device)
+        states = torch.from_numpy(states).float().to(self.device)
         actions = torch.from_numpy(actions).to(self.device)
         return states, actions
 

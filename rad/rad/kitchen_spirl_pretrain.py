@@ -77,9 +77,9 @@ def experiment(variant):
     # eval_freq = variant["eval_freq"]
     # log_interval = variant["log_interval"]
     # use_raw_actions = variant["use_raw_actions"]
-    # pre_transform_image_size = (
-    #    pre_transform_image_size if "crop" in data_augs else image_size
-    # )
+    pre_transform_image_size = (
+        pre_transform_image_size if "crop" in data_augs else image_size
+    )
     # pre_transform_image_size = pre_transform_image_size
 
     # if data_augs == "crop":
@@ -153,6 +153,10 @@ def experiment(variant):
         device=device,
         d4rl_dataset=d4rl_dataset,
         skill_len=spirl_skill_len,
+        use_image=use_image,
+        img_width=image_size,
+        img_height=image_size,
+        frame_stack=frame_stack,
     )
 
     agent = make_agent(

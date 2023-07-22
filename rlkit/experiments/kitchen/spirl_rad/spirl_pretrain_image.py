@@ -40,12 +40,12 @@ if __name__ == "__main__":
     # encoder
     parser.add_argument("--encoder_feature_dim", default=50, type=int)
     parser.add_argument("--encoder_tau", default=0.05, type=float)
-    parser.add_argument("--num_layers", default=5, type=int)
+    parser.add_argument("--num_layers", default=4, type=int)
     parser.add_argument("--num_filters", default=32, type=int)
     parser.add_argument("--latent_dim", default=128, type=int)
     # sac
     parser.add_argument("--init_temperature", default=0.1, type=float)
-    parser.add_argument("--alpha_lr", default=1e-4, type=float)
+    parser.add_argument("--alpha_lr", default=1e-3, type=float)
     parser.add_argument("--alpha_beta", default=0.5, type=float)
     parser.add_argument("--detach_encoder", default=False, action="store_true")
     # spirl
@@ -62,17 +62,17 @@ if __name__ == "__main__":
         run_group=args.run_group,
         agent_kwargs=dict(
             discount=0.99,
-            critic_lr=2e-4,
-            actor_lr=2e-4,
-            encoder_lr=2e-4,
-            encoder_type="identity",
+            critic_lr=1e-3,
+            actor_lr=1e-3,
+            encoder_lr=1e-3,
+            encoder_type="pixel",
             data_augs="no_aug",
             use_amp=True,
             log_interval=50,
             env_action_dim=9,
             **vars(args),
         ),
-        num_train_epochs=50000,
+        num_train_epochs=10000,
         frame_stack=4,
         # replay_buffer_capacity=int(2.5e6),
         # action_repeat=1,
@@ -82,7 +82,7 @@ if __name__ == "__main__":
         use_image=True,
         image_size=64,
         env_name=None,  # will be replaced by the arg # slide-cabinet
-        batch_size=128,  # 512 originally for online RL
+        batch_size=64,  # 512 originally for online RL
         # eval_freq=1000,
         # log_interval=1000,
         # env_kwargs=dict(
