@@ -43,8 +43,8 @@ def squash(mu, pi, log_pi, max_range=1):
     mu = torch.tanh(mu) * max_range
     if log_pi is not None:
         # log_pi -= torch.log(F.relu(1 - pi.pow(2)) + 1e-6).sum(-1, keepdim=True)
-        log_pi -= torch.log(max_range) + 2 * (
-            torch.log(2.0) - pi - F.softplus(-2.0 * pi)
+        log_pi -= np.log(max_range) + 2 * (
+            np.log(2.0) - pi - F.softplus(-2.0 * pi)
         ).sum(-1, keepdim=True)
     if pi is not None:
         pi = torch.tanh(pi) * max_range

@@ -269,6 +269,7 @@ class SPiRLRadSacAgent(RadSacAgent, nn.Module):
         spirl_action_horizon=10,
         target_prior_divergence=5.0,
         max_action_range=2.0,
+        spirl_lr=1e-4,
         # checkpoint loading
         ckpt_load_dir=None,
         **kwargs
@@ -447,7 +448,7 @@ class SPiRLRadSacAgent(RadSacAgent, nn.Module):
             list(self.spirl_encoder.parameters())
             + list(self.spirl_prior.parameters())
             + list(self.spirl_decoder.parameters()),
-            lr=encoder_lr,
+            lr=spirl_lr,
         )
         self.use_amp = use_amp
         self.grad_scaler = torch.cuda.amp.GradScaler(enabled=self.use_amp)
@@ -479,7 +480,7 @@ class SPiRLRadSacAgent(RadSacAgent, nn.Module):
         with torch.cuda.amp.autocast(enabled=self.use_amp):
             with torch.no_grad():
                 policy_mu, policy_action, _, log_std = self.actor(
-                    next_obs, compute_log_pi=False
+                    next_obs, compute_log_pi=False, squash_output=False
                 )
                 prior_mu, _, _, prior_log_std = self.spirl_prior(
                     next_obs, compute_log_pi=False, squash_output=False
@@ -517,7 +518,9 @@ class SPiRLRadSacAgent(RadSacAgent, nn.Module):
     def update_actor_and_alpha(self, obs, log_dict, step):
         with torch.cuda.amp.autocast(enabled=self.use_amp):
             # detach encoder, so we don't update it with the actor loss
-            _, pi, log_pi, log_std = self.actor(obs, detach_encoder=True)
+            _, pi, log_pi, log_std = self.actor(
+                obs, detach_encoder=True, squash_output=False
+            )
             actor_Q1, actor_Q2 = self.critic(obs, pi, detach_encoder=True)
             with torch.no_grad():
                 prior_mu, _, _, prior_log_std = self.spirl_prior(

@@ -53,6 +53,7 @@ if __name__ == "__main__":
     parser.add_argument("--spirl_architecture", default="rnn", type=str)
     parser.add_argument("--use_film", default=False, action="store_true")
     parser.add_argument("--spirl_beta", default=5e-4, type=float)
+    parser.add_argument("--spirl_lr", default=2e-4, type=float)
     parser.add_argument("--spirl_action_horizon", default=10, type=int)
 
     args = parser.parse_args()

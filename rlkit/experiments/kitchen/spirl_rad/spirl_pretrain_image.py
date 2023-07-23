@@ -45,7 +45,7 @@ if __name__ == "__main__":
     parser.add_argument("--latent_dim", default=128, type=int)
     # sac
     parser.add_argument("--init_temperature", default=0.1, type=float)
-    parser.add_argument("--alpha_lr", default=1e-3, type=float)
+    parser.add_argument("--alpha_lr", default=5e-4, type=float)
     parser.add_argument("--alpha_beta", default=0.5, type=float)
     parser.add_argument("--detach_encoder", default=False, action="store_true")
     # spirl
@@ -54,6 +54,7 @@ if __name__ == "__main__":
     parser.add_argument("--spirl_architecture", default="rnn", type=str)
     parser.add_argument("--use_film", default=False, action="store_true")
     parser.add_argument("--spirl_beta", default=5e-4, type=float)
+    parser.add_argument("--spirl_lr", default=5e-4, type=float)
     parser.add_argument("--spirl_action_horizon", default=10, type=int)
 
     args = parser.parse_args()
@@ -62,9 +63,9 @@ if __name__ == "__main__":
         run_group=args.run_group,
         agent_kwargs=dict(
             discount=0.99,
-            critic_lr=1e-3,
-            actor_lr=1e-3,
-            encoder_lr=1e-3,
+            critic_lr=5e-4,
+            actor_lr=5e-4,
+            encoder_lr=5e-4,
             encoder_type="pixel",
             data_augs="no_aug",
             use_amp=True,
