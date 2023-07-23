@@ -453,12 +453,12 @@ class SPiRLRadSacAgent(RadSacAgent, nn.Module):
         self.use_amp = use_amp
         self.grad_scaler = torch.cuda.amp.GradScaler(enabled=self.use_amp)
         self.spirl_action_horizon = spirl_action_horizon
-        # now set the actor's parameters to the ObsPrior
-        self.actor.load_state_dict(self.spirl_prior.state_dict())
 
         # load model from checkpoint
         if ckpt_load_dir:
             self.load(ckpt_load_dir)
+        # now set the actor's parameters to the ObsPrior
+        self.actor.load_state_dict(self.spirl_prior.state_dict())
 
         # TODO: discount according to variable length skills
         # TODO: freeze the closed loop decoder's encoder maybe? prob not
