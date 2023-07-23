@@ -654,11 +654,13 @@ class SPiRLRadSacAgent(RadSacAgent, nn.Module):
                 obs = obs.unsqueeze(0)
                 # get action from HL policy
                 if sample_hl_action:
-                    _, pi, _, _ = self.actor(obs, compute_log_pi=False)
+                    _, pi, _, _ = self.actor(
+                        obs, compute_log_pi=False, squash_output=False
+                    )
                     self.current_latent = pi
                 else:
                     mu, _, _, _ = self.actor(
-                        obs, compute_pi=False, compute_log_pi=False
+                        obs, compute_pi=False, compute_log_pi=False, squash_output=False
                     )
                     self.current_latent = mu
                 self.sampled_new_action = True

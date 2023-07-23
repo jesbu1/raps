@@ -66,7 +66,7 @@ if __name__ == "__main__":
             encoder_lr=1e-4,
             encoder_type="identity",
             data_augs="no_aug",
-            use_amp=True,
+            use_amp=False,
             log_interval=50,
             env_action_dim=9,
             max_action_range=2.0,  # max action range for the HL policy
