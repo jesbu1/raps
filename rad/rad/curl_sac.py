@@ -147,8 +147,9 @@ class Actor(nn.Module):
             log_std + 1
         )
 
-        self.outputs["mu"] = mu
-        self.outputs["std"] = log_std.exp()
+        self.outputs["mu"] = mu.clone()
+        self.outputs["log_std"] = log_std.clone()
+        # self.outputs["std"] = log_std.exp().clone()
 
         if compute_pi:
             std = log_std.exp()

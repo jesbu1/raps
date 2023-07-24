@@ -475,14 +475,21 @@ class SPiRLRadSacAgent(RadSacAgent, nn.Module):
     def update_critic(self, obs, action, reward, next_obs, not_done, log_dict, step):
         with torch.cuda.amp.autocast(enabled=self.use_amp):
             with torch.no_grad():
-                policy_mu, policy_action, _, log_std = self.actor(
+                _, policy_action, _, _ = self.actor(
                     next_obs, compute_log_pi=False, squash_output=True
+                )
+                policy_unsquashed_mu, policy_unsquashed_log_std = (
+                    self.actor.outputs["mu"],
+                    self.actor.outputs["log_std"],
                 )
                 prior_mu, _, _, prior_log_std = self.spirl_prior(
                     next_obs, compute_log_pi=False, squash_output=False
                 )
                 divergence_from_prior = utils.gaussian_kl_divergence(
-                    policy_mu, log_std, prior_mu, prior_log_std
+                    policy_unsquashed_mu,
+                    policy_unsquashed_log_std,
+                    prior_mu,
+                    prior_log_std,
                 )
                 divergence_from_prior = torch.clamp(divergence_from_prior, max=100)
 
@@ -515,8 +522,12 @@ class SPiRLRadSacAgent(RadSacAgent, nn.Module):
     def update_actor_and_alpha(self, obs, log_dict, step):
         with torch.cuda.amp.autocast(enabled=self.use_amp):
             # detach encoder, so we don't update it with the actor loss
-            mu, pi, _, log_std = self.actor(
+            _, pi, _, log_std = self.actor(
                 obs, detach_encoder=True, squash_output=True, compute_log_pi=False
+            )
+            policy_unsquashed_mu, policy_unsquashed_log_std = (
+                self.actor.outputs["mu"],
+                self.actor.outputs["log_std"],
             )
             actor_Q1, actor_Q2 = self.critic(obs, pi, detach_encoder=True)
             with torch.no_grad():
@@ -527,7 +538,7 @@ class SPiRLRadSacAgent(RadSacAgent, nn.Module):
                     1.0 + np.log(2 * np.pi)
                 ) + log_std.sum(dim=-1)
             prior_kl_divergence = utils.gaussian_kl_divergence(
-                mu, log_std, prior_mu, prior_log_std
+                policy_unsquashed_mu, policy_unsquashed_log_std, prior_mu, prior_log_std
             )
             prior_kl_divergence = torch.clamp(prior_kl_divergence, max=100)
 
@@ -639,37 +650,36 @@ class SPiRLRadSacAgent(RadSacAgent, nn.Module):
         # TODO: handle one-hot case
         # TODO: also support parallel envs
         with torch.no_grad():
-            with torch.cuda.amp.autocast(enabled=True):
-                if self.encoder_type == "pixel":
-                    obs = input_obs / 255.0
-                else:
-                    obs = input_obs
-                # now get action from LL policy (spirl decoder)
-                self.current_action_horizon += 1
-                if self.current_action_horizon == self.spirl_action_horizon:
-                    # reset
-                    self.reset()
+            if self.encoder_type == "pixel":
+                obs = input_obs / 255.0
+            else:
+                obs = input_obs
+            # now get action from LL policy (spirl decoder)
+            self.current_action_horizon += 1
+            if self.current_action_horizon == self.spirl_action_horizon:
+                # reset
+                self.reset()
 
-                if self.current_latent is None:
-                    obs = torch.FloatTensor(obs).to(self.device)
-                    obs = obs.unsqueeze(0)
-                    # get action from HL policy
-                    if sample_hl_action:
-                        _, pi, _, _ = self.actor(
-                            obs, compute_log_pi=False, squash_output=True
-                        )
-                        self.current_latent = pi
-                    else:
-                        mu, _, _, _ = self.actor(
-                            obs,
-                            compute_pi=False,
-                            compute_log_pi=False,
-                            squash_output=True,
-                        )
-                        self.current_latent = mu
-                    self.sampled_new_action = True
+            if self.current_latent is None:
+                obs = torch.FloatTensor(obs).to(self.device)
+                obs = obs.unsqueeze(0)
+                # get action from HL policy
+                if sample_hl_action:
+                    _, pi, _, _ = self.actor(
+                        obs, compute_log_pi=False, squash_output=True
+                    )
+                    self.current_latent = pi
                 else:
-                    self.sampled_new_action = False
+                    mu, _, _, _ = self.actor(
+                        obs,
+                        compute_pi=False,
+                        compute_log_pi=False,
+                        squash_output=True,
+                    )
+                    self.current_latent = mu
+                self.sampled_new_action = True
+            else:
+                self.sampled_new_action = False
 
             if obs.shape[-1] != self.image_size and self.encoder_type == "pixel":
                 obs = utils.center_crop_image(obs, self.image_size)
