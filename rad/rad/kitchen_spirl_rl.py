@@ -247,7 +247,7 @@ def experiment(variant):
     ep_infos = []
     num_train_calls = 0
     log_dict = defaultdict(list)
-    hl_env_step = time.time()
+    hl_env_step_time = time.time()
     hl_steps = 0
     hl_policy_action = None
     for step in trange(num_train_steps):
@@ -269,7 +269,7 @@ def experiment(variant):
             log_dict.update(eval_log_data)
             eval_end = time.time()
             log_dict["time/eval"].append(eval_end - eval_start)
-            hl_env_step = time.time()  # reset hl env step because we're evalling
+            hl_env_step_time = time.time()  # reset hl env step because we're evalling
         if done:
             log_dict["train/episode_reward"].append(episode_reward)
 
@@ -308,7 +308,7 @@ def experiment(variant):
             action = agent.sample_action(obs)
             if hl_policy_action is None:
                 hl_policy_action = agent.current_latent.detach().cpu().numpy().flatten()
-                agent.sampled_new_action = False  # don't add this current action to buffer because it's the first one
+                agent._orig_mod.sampled_new_action = False  # don't add this current action to buffer because it's the first one
 
         training_log = {}
 
@@ -320,17 +320,16 @@ def experiment(variant):
         )
         episode_reward += reward
         hl_reward_sum += reward
-        if agent.sampled_new_action or done_bool:
+        # orig_mod because we called torch.compile(agent) and for some reason the boolean isn't being updated
+        if agent._orig_mod.sampled_new_action or done:
             hl_steps += 1
-            hl_env_step_end = time.time()
-            log_dict["time/hl_env_step"].append(hl_env_step_end - hl_env_step)
+            log_dict["time/hl env step"].append(time.time() - hl_env_step_time)
 
             buffer_add_start = time.time()
             replay_buffer.add(
                 hl_obs, hl_policy_action, hl_reward_sum, next_obs, done_bool
             )
-            buffer_add_end = time.time()
-            log_dict["time/add_to_buffer"].append(buffer_add_end - buffer_add_start)
+            log_dict["time/add to buffer"].append(time.time() - buffer_add_start)
 
             hl_policy_action = agent.current_latent.detach().cpu().numpy().flatten()
 
@@ -345,9 +344,8 @@ def experiment(variant):
                     num_train_calls += 1
             for k, v in training_log.items():
                 log_dict[k].append(v)
-            rl_train_end = time.time()
-            log_dict["time/train"].append(rl_train_end - rl_train_start)
-            hl_env_step = time.time()
+            log_dict["time/train"].append(time.time() - rl_train_start)
+            hl_env_step_time = time.time()
 
         obs = next_obs
         episode_step += 1

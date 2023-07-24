@@ -688,7 +688,7 @@ class SPiRLRadSacAgent(RadSacAgent, nn.Module):
                 .flatten()
             )
         else:
-            if len(self.current_action_trajs) == 0:
+            if self.sampled_new_action:
                 # sample new action traj
                 repeated_latent = self.current_latent.unsqueeze(1).expand(
                     -1, self.spirl_action_horizon, -1
