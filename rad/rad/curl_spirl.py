@@ -99,9 +99,6 @@ class ActionEncoder(nn.Module):
         elif self.model_type == "transformer":
             h = self.model(action_traj)
             h = h[:, -1]
-            import pdb
-
-            pdb.set_trace()
 
         h = self.norm(h)
         h = self.nonlinearity(h)
@@ -498,9 +495,6 @@ class SPiRLRadSacAgent(RadSacAgent, nn.Module):
                 )
                 target_Q = reward + (not_done * self.discount * target_V)
             # get current Q estimates
-            import pdb
-
-            pdb.set_trace()
             current_Q1, current_Q2 = self.critic(
                 obs, action, detach_encoder=self.detach_encoder
             )
