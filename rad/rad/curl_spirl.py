@@ -475,19 +475,17 @@ class SPiRLRadSacAgent(RadSacAgent, nn.Module):
     def update_critic(self, obs, action, reward, next_obs, not_done, log_dict, step):
         with torch.cuda.amp.autocast(enabled=self.use_amp):
             with torch.no_grad():
-                _, policy_action, _, _ = self.actor(
+                _, policy_action, _, log_std = self.actor(
                     next_obs, compute_log_pi=False, squash_output=True
                 )
-                policy_unsquashed_mu, policy_unsquashed_log_std = (
-                    self.actor.outputs["mu"],
-                    self.actor.outputs["log_std"],
-                )
+                policy_unsquashed_mu = self.actor.outputs["mu"]
+
                 prior_mu, _, _, prior_log_std = self.spirl_prior(
                     next_obs, compute_log_pi=False, squash_output=False
                 )
                 divergence_from_prior = utils.gaussian_kl_divergence(
                     policy_unsquashed_mu,
-                    policy_unsquashed_log_std,
+                    log_std,
                     prior_mu,
                     prior_log_std,
                 )
@@ -500,6 +498,9 @@ class SPiRLRadSacAgent(RadSacAgent, nn.Module):
                 )
                 target_Q = reward + (not_done * self.discount * target_V)
             # get current Q estimates
+            import pdb
+
+            pdb.set_trace()
             current_Q1, current_Q2 = self.critic(
                 obs, action, detach_encoder=self.detach_encoder
             )
@@ -525,10 +526,7 @@ class SPiRLRadSacAgent(RadSacAgent, nn.Module):
             _, pi, _, log_std = self.actor(
                 obs, detach_encoder=True, squash_output=True, compute_log_pi=False
             )
-            policy_unsquashed_mu, policy_unsquashed_log_std = (
-                self.actor.outputs["mu"],
-                self.actor.outputs["log_std"],
-            )
+            policy_unsquashed_mu = self.actor.outputs["mu"]
             actor_Q1, actor_Q2 = self.critic(obs, pi, detach_encoder=True)
             with torch.no_grad():
                 prior_mu, _, _, prior_log_std = self.spirl_prior(
@@ -538,7 +536,7 @@ class SPiRLRadSacAgent(RadSacAgent, nn.Module):
                     1.0 + np.log(2 * np.pi)
                 ) + log_std.sum(dim=-1)
             prior_kl_divergence = utils.gaussian_kl_divergence(
-                policy_unsquashed_mu, policy_unsquashed_log_std, prior_mu, prior_log_std
+                policy_unsquashed_mu, log_std, prior_mu, prior_log_std
             )
             prior_kl_divergence = torch.clamp(prior_kl_divergence, max=100)
 
@@ -555,8 +553,7 @@ class SPiRLRadSacAgent(RadSacAgent, nn.Module):
 
             # optimize the actor
             self.actor_optimizer.zero_grad()
-            self.grad_scaler.scale(actor_loss).backward()
-            self.grad_scaler.step(self.actor_optimizer)
+
             self.grad_scaler.update()
 
             # optimize the KL div regularization coef alpha
