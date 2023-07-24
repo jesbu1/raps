@@ -248,6 +248,8 @@ def experiment(variant):
     num_train_calls = 0
     log_dict = defaultdict(list)
     hl_env_step = time.time()
+    hl_steps = 0
+    hl_policy_action = None
     for step in trange(num_train_steps):
         # evaluate agent periodically
         if step % eval_freq == 0:
@@ -266,12 +268,11 @@ def experiment(variant):
             replay_buffer.save(buffer_dir)
             log_dict.update(eval_log_data)
             eval_end = time.time()
-            log_dict["time/eval"] = eval_end - eval_start
+            log_dict["time/eval"].append(eval_end - eval_start)
             hl_env_step = time.time()  # reset hl env step because we're evalling
         if done:
-            log_dict["train/episode_reward"] = episode_reward
-            obs = expl_env.reset()
-            hl_obs = obs
+            log_dict["train/episode_reward"].append(episode_reward)
+
             done = False
             episode_reward = 0
             hl_reward_sum = 0
@@ -279,12 +280,13 @@ def experiment(variant):
             episode += 1
             all_infos.append(ep_infos)
 
-            log_dict["train/episode"] = episode
+            log_dict["train/episode"].append(episode)
             statistics = compute_path_info(all_infos)
             for k, v in statistics.items():
                 log_dict[f"train/{k}"] = v
 
-            log_dict["trainer/num train calls"] = num_train_calls
+            log_dict["trainer/num train calls"].append(num_train_calls)
+            log_dict["trainer/num hl steps"].append(hl_steps)
             mean_log_dict = {}
             for k, v in log_dict.items():
                 if not isinstance(v, wandb.Video):
@@ -293,6 +295,9 @@ def experiment(variant):
                     mean_log_dict[k] = v
             wandb.log(mean_log_dict, step=step * frame_stack)
             log_dict = defaultdict(list)
+            obs = expl_env.reset()
+            hl_obs = obs
+            hl_policy_action = None
 
         # sample action for data collection
         # if step < init_steps:
@@ -301,6 +306,9 @@ def experiment(variant):
 
         with utils.eval_mode(agent):
             action = agent.sample_action(obs)
+            if hl_policy_action is None:
+                hl_policy_action = agent.current_latent.detach().cpu().numpy().flatten()
+                agent.sampled_new_action = False  # don't add this current action to buffer because it's the first one
 
         training_log = {}
 
@@ -313,16 +321,19 @@ def experiment(variant):
         episode_reward += reward
         hl_reward_sum += reward
         if agent.sampled_new_action or done_bool:
+            hl_steps += 1
             hl_env_step_end = time.time()
-            log_dict["time/hl_env_step"] = hl_env_step_end - hl_env_step
-            hl_policy_action = agent.current_latent.detach().cpu().numpy().flatten()
+            log_dict["time/hl_env_step"].append(hl_env_step_end - hl_env_step)
 
             buffer_add_start = time.time()
             replay_buffer.add(
                 hl_obs, hl_policy_action, hl_reward_sum, next_obs, done_bool
             )
             buffer_add_end = time.time()
-            log_dict["time/add_to_buffer"] = buffer_add_end - buffer_add_start
+            log_dict["time/add_to_buffer"].append(buffer_add_end - buffer_add_start)
+
+            hl_policy_action = agent.current_latent.detach().cpu().numpy().flatten()
+
             hl_obs = next_obs
             hl_reward_sum = 0
             # run training update
@@ -330,12 +341,12 @@ def experiment(variant):
             if step >= init_steps:
                 num_updates = 1
                 for _ in range(num_updates):
-                    agent.update(replay_buffer, training_log, step)
+                    agent.update(replay_buffer, training_log, hl_steps)
                     num_train_calls += 1
             for k, v in training_log.items():
                 log_dict[k].append(v)
             rl_train_end = time.time()
-            log_dict["time/train"] = rl_train_end - rl_train_start
+            log_dict["time/train"].append(rl_train_end - rl_train_start)
             hl_env_step = time.time()
 
         obs = next_obs

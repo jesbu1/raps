@@ -30,13 +30,13 @@ if __name__ == "__main__":
     parser.add_argument("--critic_beta", default=0.9, type=float)
     parser.add_argument("--critic_tau", default=0.01, type=float)  # try 0.05 or 0.1
     parser.add_argument(
-        "--critic_target_update_freq", default=2, type=int
+        "--critic_target_update_freq", default=1, type=int
     )  # try to change it to 1 and retain 0.01 above
     # actor
     parser.add_argument("--actor_beta", default=0.9, type=float)
     parser.add_argument("--actor_log_std_min", default=-10, type=float)
     parser.add_argument("--actor_log_std_max", default=2, type=float)
-    parser.add_argument("--actor_update_freq", default=2, type=int)
+    parser.add_argument("--actor_update_freq", default=1, type=int)
     parser.add_argument("--discrete_continuous_dist", default=0, type=int)
     # encoder
     parser.add_argument("--encoder_feature_dim", default=50, type=int)

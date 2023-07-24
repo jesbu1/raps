@@ -243,11 +243,11 @@ class SPiRLRadSacAgent(RadSacAgent, nn.Module):
         actor_beta=0.9,
         actor_log_std_min=-10,
         actor_log_std_max=2,
-        actor_update_freq=2,
+        actor_update_freq=1,
         critic_lr=1e-3,
         critic_beta=0.9,
         critic_tau=0.005,
-        critic_target_update_freq=2,
+        critic_target_update_freq=1,
         encoder_type="pixel",
         encoder_feature_dim=50,
         encoder_lr=1e-3,
@@ -519,8 +519,8 @@ class SPiRLRadSacAgent(RadSacAgent, nn.Module):
     def update_actor_and_alpha(self, obs, log_dict, step):
         with torch.cuda.amp.autocast(enabled=self.use_amp):
             # detach encoder, so we don't update it with the actor loss
-            _, pi, log_pi, log_std = self.actor(
-                obs, detach_encoder=True, squash_output=False
+            _, pi, _, log_std = self.actor(
+                obs, detach_encoder=True, squash_output=False, compute_log_pi=False
             )
             actor_Q1, actor_Q2 = self.critic(obs, pi, detach_encoder=True)
             with torch.no_grad():
@@ -743,6 +743,7 @@ class SPiRLRadSacAgent(RadSacAgent, nn.Module):
 
     def load_curl(self, model_dir, step):
         if hasattr(self, "CURL"):
+            print("loading CURL params")
             self.CURL.load_state_dict(torch.load("%s/curl_%s.pt" % (model_dir, step)))
 
     def load(self, model_dir):
@@ -754,6 +755,7 @@ class SPiRLRadSacAgent(RadSacAgent, nn.Module):
             all_actors, key=lambda x: int(x.split("_")[-1].split(".")[0]), reverse=True
         )
         if len(all_actors) > 0:
+            print("loading high level policy params")
             step = all_actors[0].split("_")[-1].split(".")[0]
             self.actor.load_state_dict(torch.load("%s/actor_%s.pt" % (model_dir, step)))
             self.critic.load_state_dict(
@@ -822,6 +824,7 @@ class SPiRLRadSacAgent(RadSacAgent, nn.Module):
         )
 
     def load_spirl(self, model_dir, step):
+        print("loading spirl params")
         self.spirl_encoder.load_state_dict(
             torch.load("%s/spirl_encoder_%s.pt" % (model_dir, step))
         )
