@@ -247,9 +247,11 @@ def experiment(variant):
     ep_infos = []
     num_train_calls = 0
     log_dict = defaultdict(list)
+    hl_env_step = time.time()
     for step in trange(num_train_steps):
         # evaluate agent periodically
         if step % eval_freq == 0:
+            eval_start = time.time()
             eval_log_data = evaluate(
                 eval_env,
                 agent,
@@ -263,6 +265,9 @@ def experiment(variant):
             agent.save(work_dir, step)
             replay_buffer.save(buffer_dir)
             log_dict.update(eval_log_data)
+            eval_end = time.time()
+            log_dict["time/eval"] = eval_end - eval_start
+            hl_env_step = time.time()  # reset hl env step because we're evalling
         if done:
             log_dict["train/episode_reward"] = episode_reward
             obs = expl_env.reset()
@@ -298,14 +303,6 @@ def experiment(variant):
             action = agent.sample_action(obs)
 
         training_log = {}
-        # run training update
-        if step >= init_steps:
-            num_updates = 1
-            for _ in range(num_updates):
-                agent.update(replay_buffer, training_log, step)
-                num_train_calls += 1
-        for k, v in training_log.items():
-            log_dict[k].append(v)
 
         next_obs, reward, done, info = expl_env.step(action)
         ep_infos.append(info)
@@ -316,12 +313,30 @@ def experiment(variant):
         episode_reward += reward
         hl_reward_sum += reward
         if agent.sampled_new_action or done_bool:
+            hl_env_step_end = time.time()
+            log_dict["time/hl_env_step"] = hl_env_step_end - hl_env_step
             hl_policy_action = agent.current_latent.detach().cpu().numpy().flatten()
+
+            buffer_add_start = time.time()
             replay_buffer.add(
                 hl_obs, hl_policy_action, hl_reward_sum, next_obs, done_bool
             )
+            buffer_add_end = time.time()
+            log_dict["time/add_to_buffer"] = buffer_add_end - buffer_add_start
             hl_obs = next_obs
             hl_reward_sum = 0
+            # run training update
+            rl_train_start = time.time()
+            if step >= init_steps:
+                num_updates = 1
+                for _ in range(num_updates):
+                    agent.update(replay_buffer, training_log, step)
+                    num_train_calls += 1
+            for k, v in training_log.items():
+                log_dict[k].append(v)
+            rl_train_end = time.time()
+            log_dict["time/train"] = rl_train_end - rl_train_start
+            hl_env_step = time.time()
 
         obs = next_obs
         episode_step += 1

@@ -453,12 +453,13 @@ class SPiRLRadSacAgent(RadSacAgent, nn.Module):
         self.use_amp = use_amp
         self.grad_scaler = torch.cuda.amp.GradScaler(enabled=self.use_amp)
         self.spirl_action_horizon = spirl_action_horizon
+        # TODO: examine why the prior KL divergence starts so high if we literally initialize to the prior
+        # now set the actor's parameters to the ObsPrior
+        self.actor.load_state_dict(self.spirl_prior.state_dict())
 
         # load model from checkpoint
         if ckpt_load_dir:
             self.load(ckpt_load_dir)
-        # now set the actor's parameters to the ObsPrior
-        self.actor.load_state_dict(self.spirl_prior.state_dict())
 
         # TODO: discount according to variable length skills
         # TODO: freeze the closed loop decoder's encoder maybe? prob not
@@ -552,7 +553,9 @@ class SPiRLRadSacAgent(RadSacAgent, nn.Module):
 
             # optimize the KL div regularization coef alpha
             self.log_alpha_optimizer.zero_grad()
-            alpha_loss = (self.alpha * (-log_pi - self.target_kl).detach()).mean()
+            alpha_loss = (
+                self.alpha * (-prior_kl_divergence - self.target_kl).detach()
+            ).mean()
             # if step % self.log_interval == 0:
             log_dict["rl_training/alpha_loss"] = alpha_loss.item()
             log_dict["rl_training/train_alpha_value"] = self.alpha.item()
