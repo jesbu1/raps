@@ -27,13 +27,13 @@ if __name__ == "__main__":
     parser.add_argument("--agent", default="rad_sac", type=str)
     parser.add_argument("--hidden_dim", default=128, type=int)
     # critic
-    parser.add_argument("--critic_beta", default=0.9, type=float)
+    # parser.add_argument("--critic_beta", default=0.9, type=float)
     parser.add_argument("--critic_tau", default=0.01, type=float)  # try 0.05 or 0.1
     parser.add_argument(
         "--critic_target_update_freq", default=1, type=int
     )  # try to change it to 1 and retain 0.01 above
     # actor
-    parser.add_argument("--actor_beta", default=0.9, type=float)
+    # parser.add_argument("--actor_beta", default=0.9, type=float)
     parser.add_argument("--actor_log_std_min", default=-10, type=float)
     parser.add_argument("--actor_log_std_max", default=2, type=float)
     parser.add_argument("--actor_update_freq", default=1, type=int)
@@ -47,7 +47,7 @@ if __name__ == "__main__":
     # sac
     parser.add_argument("--init_temperature", default=0.1, type=float)
     parser.add_argument("--alpha_lr", default=1e-4, type=float)
-    parser.add_argument("--alpha_beta", default=0.5, type=float)
+    # parser.add_argument("--alpha_beta", default=0.5, type=float)
     parser.add_argument("--detach_encoder", default=False, action="store_true")
     # spirl
     parser.add_argument("--spirl_latent_dim", default=10, type=int)
@@ -66,7 +66,7 @@ if __name__ == "__main__":
             encoder_lr=1e-4,
             encoder_type="identity",
             data_augs="no_aug",
-            use_amp=True,
+            use_amp=False,
             log_interval=50,
             env_action_dim=9,
             max_action_range=2.0,  # max action range for the HL policy

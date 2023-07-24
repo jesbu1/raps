@@ -343,14 +343,14 @@ class RadSacAgent(nn.Module):
         discount=0.99,
         init_temperature=0.01,
         alpha_lr=1e-3,
-        alpha_beta=0.9,
+        # alpha_beta=0.9,
         actor_lr=1e-3,
-        actor_beta=0.9,
+        # actor_beta=0.9,
         actor_log_std_min=-10,
         actor_log_std_max=2,
         actor_update_freq=2,
         critic_lr=1e-3,
-        critic_beta=0.9,
+        # critic_beta=0.9,
         critic_tau=0.005,
         critic_target_update_freq=2,
         encoder_type="pixel",
@@ -446,15 +446,18 @@ class RadSacAgent(nn.Module):
 
         # optimizers
         self.actor_optimizer = torch.optim.Adam(
-            self.actor.parameters(), lr=actor_lr, betas=(actor_beta, 0.999)
+            self.actor.parameters(),
+            lr=actor_lr,  # betas=(actor_beta, 0.999)
         )
 
         self.critic_optimizer = torch.optim.Adam(
-            self.critic.parameters(), lr=critic_lr, betas=(critic_beta, 0.999)
+            self.critic.parameters(),
+            lr=critic_lr,  # betas=(critic_beta, 0.999)
         )
 
         self.log_alpha_optimizer = torch.optim.Adam(
-            [self.log_alpha], lr=alpha_lr, betas=(alpha_beta, 0.999)
+            [self.log_alpha],
+            lr=alpha_lr,  # betas=(alpha_beta, 0.999)
         )
 
         if self.encoder_type == "pixel":

@@ -453,14 +453,9 @@ class SPiRLRadSacAgent(RadSacAgent, nn.Module):
         self.use_amp = use_amp
         self.grad_scaler = torch.cuda.amp.GradScaler(enabled=self.use_amp)
         self.spirl_action_horizon = spirl_action_horizon
-        # TODO: examine why the prior KL divergence starts so high if we literally initialize to the prior
-        # now set the actor's parameters to the ObsPrior
-        self.actor.load_state_dict(self.spirl_prior.state_dict())
-
         # load model from checkpoint
         if ckpt_load_dir:
             self.load(ckpt_load_dir)
-
         # TODO: discount according to variable length skills
         # TODO: freeze the closed loop decoder's encoder maybe? prob not
         self.reset()
@@ -481,7 +476,7 @@ class SPiRLRadSacAgent(RadSacAgent, nn.Module):
         with torch.cuda.amp.autocast(enabled=self.use_amp):
             with torch.no_grad():
                 policy_mu, policy_action, _, log_std = self.actor(
-                    next_obs, compute_log_pi=False, squash_output=False
+                    next_obs, compute_log_pi=False, squash_output=True
                 )
                 prior_mu, _, _, prior_log_std = self.spirl_prior(
                     next_obs, compute_log_pi=False, squash_output=False
@@ -489,6 +484,7 @@ class SPiRLRadSacAgent(RadSacAgent, nn.Module):
                 divergence_from_prior = utils.gaussian_kl_divergence(
                     policy_mu, log_std, prior_mu, prior_log_std
                 )
+                divergence_from_prior = torch.clamp(divergence_from_prior, max=100)
 
                 target_Q1, target_Q2 = self.critic_target(next_obs, policy_action)
                 target_V = (
@@ -519,8 +515,8 @@ class SPiRLRadSacAgent(RadSacAgent, nn.Module):
     def update_actor_and_alpha(self, obs, log_dict, step):
         with torch.cuda.amp.autocast(enabled=self.use_amp):
             # detach encoder, so we don't update it with the actor loss
-            _, pi, _, log_std = self.actor(
-                obs, detach_encoder=True, squash_output=False, compute_log_pi=False
+            mu, pi, _, log_std = self.actor(
+                obs, detach_encoder=True, squash_output=True, compute_log_pi=False
             )
             actor_Q1, actor_Q2 = self.critic(obs, pi, detach_encoder=True)
             with torch.no_grad():
@@ -531,8 +527,9 @@ class SPiRLRadSacAgent(RadSacAgent, nn.Module):
                     1.0 + np.log(2 * np.pi)
                 ) + log_std.sum(dim=-1)
             prior_kl_divergence = utils.gaussian_kl_divergence(
-                pi, log_std, prior_mu, prior_log_std
+                mu, log_std, prior_mu, prior_log_std
             )
+            prior_kl_divergence = torch.clamp(prior_kl_divergence, max=100)
 
             actor_Q = torch.min(actor_Q1, actor_Q2)
             actor_loss = (self.alpha.detach() * prior_kl_divergence - actor_Q).mean()
@@ -642,63 +639,67 @@ class SPiRLRadSacAgent(RadSacAgent, nn.Module):
         # TODO: handle one-hot case
         # TODO: also support parallel envs
         with torch.no_grad():
-            if self.encoder_type == "pixel":
-                obs = input_obs / 255.0
-            else:
-                obs = input_obs
-            # now get action from LL policy (spirl decoder)
-            self.current_action_horizon += 1
-            if self.current_action_horizon == self.spirl_action_horizon:
-                # reset
-                self.reset()
-
-            if self.current_latent is None:
-                obs = torch.FloatTensor(obs).to(self.device)
-                obs = obs.unsqueeze(0)
-                # get action from HL policy
-                if sample_hl_action:
-                    _, pi, _, _ = self.actor(
-                        obs, compute_log_pi=False, squash_output=False
-                    )
-                    self.current_latent = pi
+            with torch.cuda.amp.autocast(enabled=True):
+                if self.encoder_type == "pixel":
+                    obs = input_obs / 255.0
                 else:
-                    mu, _, _, _ = self.actor(
-                        obs, compute_pi=False, compute_log_pi=False, squash_output=False
-                    )
-                    self.current_latent = mu
-                self.sampled_new_action = True
-            else:
-                self.sampled_new_action = False
+                    obs = input_obs
+                # now get action from LL policy (spirl decoder)
+                self.current_action_horizon += 1
+                if self.current_action_horizon == self.spirl_action_horizon:
+                    # reset
+                    self.reset()
 
-        if obs.shape[-1] != self.image_size and self.encoder_type == "pixel":
-            obs = utils.center_crop_image(obs, self.image_size)
-        if self.spirl_closed_loop:
-            if isinstance(obs, np.ndarray):
-                obs = torch.FloatTensor(obs).to(self.device)
-                obs = obs.unsqueeze(0)
-            ac = (
-                self.spirl_decoder(
-                    self.current_latent.unsqueeze(1),
-                    obs.unsqueeze(1),
+                if self.current_latent is None:
+                    obs = torch.FloatTensor(obs).to(self.device)
+                    obs = obs.unsqueeze(0)
+                    # get action from HL policy
+                    if sample_hl_action:
+                        _, pi, _, _ = self.actor(
+                            obs, compute_log_pi=False, squash_output=True
+                        )
+                        self.current_latent = pi
+                    else:
+                        mu, _, _, _ = self.actor(
+                            obs,
+                            compute_pi=False,
+                            compute_log_pi=False,
+                            squash_output=True,
+                        )
+                        self.current_latent = mu
+                    self.sampled_new_action = True
+                else:
+                    self.sampled_new_action = False
+
+            if obs.shape[-1] != self.image_size and self.encoder_type == "pixel":
+                obs = utils.center_crop_image(obs, self.image_size)
+            if self.spirl_closed_loop:
+                if isinstance(obs, np.ndarray):
+                    obs = torch.FloatTensor(obs).to(self.device)
+                    obs = obs.unsqueeze(0)
+                ac = (
+                    self.spirl_decoder(
+                        self.current_latent.unsqueeze(1),
+                        obs.unsqueeze(1),
+                    )
+                    .squeeze(0)
+                    .detach()
+                    .cpu()
+                    .numpy()
+                    .flatten()
                 )
-                .squeeze(0)
-                .detach()
-                .cpu()
-                .numpy()
-                .flatten()
-            )
-        else:
-            if self.sampled_new_action:
-                # sample new action traj
-                repeated_latent = self.current_latent.unsqueeze(1).expand(
-                    -1, self.spirl_action_horizon, -1
-                )
-                ac_traj = self.spirl_decoder(repeated_latent)
-                self.current_action_trajs = list(
-                    ac_traj.squeeze(0).detach().cpu().numpy()
-                )
-            ac = self.current_action_trajs.pop(0).flatten()
-        return ac
+            else:
+                if self.sampled_new_action:
+                    # sample new action traj
+                    repeated_latent = self.current_latent.unsqueeze(1).expand(
+                        -1, self.spirl_action_horizon, -1
+                    )
+                    ac_traj = self.spirl_decoder(repeated_latent)
+                    self.current_action_trajs = list(
+                        ac_traj.squeeze(0).detach().cpu().numpy()
+                    )
+                ac = self.current_action_trajs.pop(0).flatten()
+            return ac
 
     def select_action(self, obs):
         return self.get_deterministic_action_from_decoder(obs, sample_hl_action=False)
@@ -749,6 +750,15 @@ class SPiRLRadSacAgent(RadSacAgent, nn.Module):
     def load(self, model_dir):
         # check if actor or critic or curl checkpoints exist. if they do use them
         model_ckpts = os.listdir(model_dir)
+
+        # latest spirl checkpoint
+        all_spirl = [x for x in model_ckpts if "spirl" in x]
+        all_spirl = sorted(
+            all_spirl, key=lambda x: int(x.split("_")[-1].split(".")[0]), reverse=True
+        )
+        spirl_step = all_spirl[0].split("_")[-1].split(".")[0]
+        self.load_spirl(model_dir, spirl_step)
+
         all_actors = [x for x in model_ckpts if "actor" in x]
         # sort by step, decreasing
         all_actors = sorted(
@@ -774,13 +784,10 @@ class SPiRLRadSacAgent(RadSacAgent, nn.Module):
             self.actor_optimizer.load_state_dict(
                 torch.load("%s/actor_optim_%s.pt" % (model_dir, step))
             )
-        # latest spirl checkpoint
-        all_spirl = [x for x in model_ckpts if "spirl" in x]
-        all_spirl = sorted(
-            all_spirl, key=lambda x: int(x.split("_")[-1].split(".")[0]), reverse=True
-        )
-        spirl_step = all_spirl[0].split("_")[-1].split(".")[0]
-        self.load_spirl(model_dir, spirl_step)
+        else:
+            # load the actor from the prior
+            print("SETTING ACTOR TO PRIOR")
+            self.actor.load_state_dict(self.spirl_prior.state_dict())
 
     def save(self, model_dir, step):
         torch.save(self.actor.state_dict(), "%s/actor_%s.pt" % (model_dir, step))
@@ -824,7 +831,7 @@ class SPiRLRadSacAgent(RadSacAgent, nn.Module):
         )
 
     def load_spirl(self, model_dir, step):
-        print("loading spirl params")
+        print("LOADING SPiRL params")
         self.spirl_encoder.load_state_dict(
             torch.load("%s/spirl_encoder_%s.pt" % (model_dir, step))
         )

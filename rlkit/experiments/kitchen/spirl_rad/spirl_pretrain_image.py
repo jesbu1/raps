@@ -45,7 +45,7 @@ if __name__ == "__main__":
     parser.add_argument("--latent_dim", default=128, type=int)
     # sac
     parser.add_argument("--init_temperature", default=0.1, type=float)
-    parser.add_argument("--alpha_lr", default=5e-4, type=float)
+    parser.add_argument("--alpha_lr", default=3e-4, type=float)
     parser.add_argument("--alpha_beta", default=0.5, type=float)
     parser.add_argument("--detach_encoder", default=False, action="store_true")
     # spirl
@@ -63,9 +63,9 @@ if __name__ == "__main__":
         run_group=args.run_group,
         agent_kwargs=dict(
             discount=0.99,
-            critic_lr=5e-4,
-            actor_lr=5e-4,
-            encoder_lr=5e-4,
+            critic_lr=3e-4,
+            actor_lr=3e-4,
+            encoder_lr=3e-4,
             encoder_type="pixel",
             data_augs="no_aug",
             use_amp=True,
@@ -73,7 +73,7 @@ if __name__ == "__main__":
             env_action_dim=9,
             **vars(args),
         ),
-        num_train_epochs=1000,
+        num_train_epochs=10000,
         frame_stack=4,
         # replay_buffer_capacity=int(2.5e6),
         # action_repeat=1,
