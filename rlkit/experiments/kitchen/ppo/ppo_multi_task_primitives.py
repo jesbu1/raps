@@ -21,7 +21,7 @@ if __name__ == "__main__":
     parser.add_argument("--exp_prefix", type=str, default="test")
     parser.add_argument("--num_seeds", type=int, default=1)
     parser.add_argument("--mode", type=str, default="local")
-    parser.add_argument("--env", type=str, default="")
+    parser.add_argument("--env", type=str, default="kitchen-mixed-v0")
     parser.add_argument("--debug", action="store_true", default=False)
     args = parser.parse_args()
     if args.debug:
@@ -72,7 +72,7 @@ if __name__ == "__main__":
         use_linear_lr_decay=False,
     )
 
-    search_space = {"rollout_kwargs.gamma": [0.99, 0.95], "env_name": [args.env]}
+    search_space = {"rollout_kwargs.gamma": [0.99], "env_name": [args.env]}
     sweeper = hyp.DeterministicHyperparameterSweeper(
         search_space,
         default_parameters=variant,
