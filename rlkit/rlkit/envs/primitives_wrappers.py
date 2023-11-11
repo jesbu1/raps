@@ -279,9 +279,10 @@ class ImageEnvMetaworld(gym.Wrapper):
             render_mode=render_mode,
             render_im_shape=render_im_shape,
         )
+        state_obs = o
         o = self._get_image()
         r = self.reward_scale * r
-        new_i = {}
+        new_i = {"state_obs": state_obs}
         for k, v in i.items():
             if v is not None:
                 new_i[k] = v
